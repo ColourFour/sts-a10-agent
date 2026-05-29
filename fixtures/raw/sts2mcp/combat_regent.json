@@ -1,0 +1,39 @@
+{
+  "state_type": "monster",
+  "run": {
+    "act": 1,
+    "floor": 4,
+    "ascension": 10
+  },
+  "player": {
+    "character": "Regent",
+    "hp": 56,
+    "max_hp": 75,
+    "gold": 88,
+    "energy": 3,
+    "deck": [],
+    "hand": [
+      {
+        "index": 0,
+        "id": "STRIKE_REGENT",
+        "name": "Strike",
+        "can_play": true
+      }
+    ],
+    "relics": [],
+    "potions": []
+  },
+  "battle": {
+    "turn": 2,
+    "phase": "player",
+    "enemies": [
+      {
+        "entity_id": "synthetic_enemy",
+        "name": "Synthetic Enemy",
+        "hp": 24,
+        "intent": "attack",
+        "intent_damage": 9
+      }
+    ]
+  }
+}

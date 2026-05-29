@@ -5,6 +5,7 @@
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -15,10 +16,10 @@ dist/
 build/
 
 # Local data / logs
-data/cache/
-data/raw/
-logs/
-runs/
+/data/cache/
+/data/raw/
+/logs/
+/runs/
 *.local.json
 *.local.jsonl
 

@@ -1,0 +1,59 @@
+{
+  "state_type": "shop",
+  "run": {
+    "act": 1,
+    "floor": 5,
+    "ascension": 10
+  },
+  "player": {
+    "character": "Regent",
+    "hp": 55,
+    "max_hp": 75,
+    "gold": 118,
+    "deck": [
+      {
+        "id": "STRIKE_REGENT",
+        "name": "Strike",
+        "type": "Attack",
+        "rarity": "Starter",
+        "cost": 1
+      },
+      {
+        "id": "DEFEND_REGENT",
+        "name": "Defend",
+        "type": "Skill",
+        "rarity": "Starter",
+        "cost": 1
+      }
+    ],
+    "relics": [],
+    "potions": []
+  },
+  "shop": {
+    "can_remove": true,
+    "removal_price": 75,
+    "items": [
+      {
+        "index": 1,
+        "category": "card",
+        "price": 64,
+        "item": {
+          "id": "REGENT_SHOP_ATTACK",
+          "name": "Shop Attack",
+          "type": "Attack",
+          "rarity": "Common",
+          "description": "Deal 9 damage."
+        }
+      },
+      {
+        "index": 2,
+        "category": "potion",
+        "price": 50,
+        "item": {
+          "id": "BLOCK_POTION",
+          "name": "Block Potion"
+        }
+      }
+    ]
+  }
+}

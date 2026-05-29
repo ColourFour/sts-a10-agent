@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sts2-a10-agent"
+version = "0.1.0"
+description = "Read-only Slay the Spire 2 A10 advisor foundation"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "sts2-a10-agent contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+sts2-agent = "sts2_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,66 @@
+{
+  "state_type": "card_reward",
+  "run": {
+    "act": 1,
+    "floor": 3,
+    "ascension": 10
+  },
+  "player": {
+    "character": "Regent",
+    "hp": 62,
+    "max_hp": 75,
+    "gold": 118,
+    "deck": [
+      {
+        "id": "STRIKE_REGENT",
+        "name": "Strike",
+        "type": "Attack",
+        "rarity": "Starter",
+        "cost": 1,
+        "upgraded": false
+      },
+      {
+        "id": "DEFEND_REGENT",
+        "name": "Defend",
+        "type": "Skill",
+        "rarity": "Starter",
+        "cost": 1,
+        "upgraded": false
+      }
+    ],
+    "relics": [
+      {
+        "id": "REGENT_STARTER_RELIC",
+        "name": "Starter Relic"
+      }
+    ],
+    "potions": [
+      {
+        "slot": 0,
+        "id": "FIRE_POTION",
+        "name": "Fire Potion",
+        "can_use": false,
+        "requires_target": true
+      }
+    ]
+  },
+  "card_reward": {
+    "can_skip": true,
+    "cards": [
+      {
+        "index": 0,
+        "id": "REGENT_COMMON_ATTACK",
+        "name": "Common Attack",
+        "upgraded": false,
+        "description": "Deal 6 damage."
+      },
+      {
+        "index": 1,
+        "id": "REGENT_COMMON_SKILL",
+        "name": "Common Skill",
+        "upgraded": false,
+        "description": "Gain 5 Block."
+      }
+    ]
+  }
+}

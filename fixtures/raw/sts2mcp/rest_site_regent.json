@@ -1,0 +1,31 @@
+{
+  "state_type": "rest_site",
+  "run": {
+    "act": 1,
+    "floor": 8,
+    "ascension": 10
+  },
+  "player": {
+    "character": "Regent",
+    "hp": 28,
+    "max_hp": 75,
+    "gold": 90,
+    "deck": [],
+    "relics": [],
+    "potions": []
+  },
+  "rest_site": {
+    "options": [
+      {
+        "index": 0,
+        "id": "REST",
+        "name": "Rest"
+      },
+      {
+        "index": 1,
+        "id": "SMITH",
+        "name": "Smith"
+      }
+    ]
+  }
+}

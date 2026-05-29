@@ -1,0 +1,35 @@
+{
+  "state_type": "map",
+  "run": {
+    "act": 1,
+    "floor": 6,
+    "ascension": 10
+  },
+  "player": {
+    "character": "Regent",
+    "hp": 32,
+    "max_hp": 75,
+    "gold": 118,
+    "deck": [],
+    "relics": [],
+    "potions": []
+  },
+  "map": {
+    "next_options": [
+      {
+        "index": 0,
+        "id": "elite-left",
+        "type": "elite",
+        "future_elites": 2,
+        "future_rest_sites": 0
+      },
+      {
+        "index": 1,
+        "id": "rest-right",
+        "type": "rest",
+        "future_elites": 0,
+        "future_rest_sites": 1
+      }
+    ]
+  }
+}

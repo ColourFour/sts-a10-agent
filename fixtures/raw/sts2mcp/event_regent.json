@@ -1,0 +1,32 @@
+{
+  "state_type": "event",
+  "run": {
+    "act": 1,
+    "floor": 9,
+    "ascension": 10
+  },
+  "player": {
+    "character": "Regent",
+    "hp": 50,
+    "max_hp": 75,
+    "gold": 80,
+    "deck": [],
+    "relics": [],
+    "potions": []
+  },
+  "event": {
+    "name": "Synthetic Event",
+    "options": [
+      {
+        "index": 0,
+        "id": "safe_leave",
+        "label": "Leave"
+      },
+      {
+        "index": 1,
+        "id": "risky_offer",
+        "label": "Lose HP for a random reward"
+      }
+    ]
+  }
+}
