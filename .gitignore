@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / tooling
+node_modules/
+dist/
+build/
+
+# Local data / logs
+data/cache/
+data/raw/
+logs/
+runs/
+*.local.json
+*.local.jsonl
+
+# Environment
+.env
+.env.*
+!.env.example
