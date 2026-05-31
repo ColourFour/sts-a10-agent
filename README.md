@@ -2,6 +2,29 @@
 
 Local Slay the Spire 2 advisor/agent research project.
 
+## GitHub Pages Applet Hub
+
+This repository also contains a Vite/React applet hub that is deployed to
+GitHub Pages by `.github/workflows/deploy-pages.yml`.
+
+Live site:
+
+```text
+https://colourfour.github.io/sts-a10-agent/#/applets
+```
+
+Useful local commands from the repository root:
+
+```bash
+npm ci
+npm run typecheck --if-present
+npm test --if-present
+npm run build
+```
+
+The build output is written to `dist/`, which is the directory uploaded by the
+GitHub Pages workflow.
+
 Goal: build a Regent-first decision engine that can eventually farm Ascension 10 reliably through inspectable state parsing, deterministic calculators, policy evaluation, and run logging.
 
 ## v0.1 Read-Only Advisor
