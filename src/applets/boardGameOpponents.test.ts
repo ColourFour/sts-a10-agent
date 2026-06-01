@@ -1,17 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { applyMove as applyXoMove, createBoard, listLegalMoves as listXoLegalMoves } from "../xoGame";
+import { createInitialTwelveJanggiState } from "./twelve-janggi/twelveJanggiEngine";
+import { Chess } from "chess.js";
 import {
   applyDomineeringMove,
   applyHexMove,
   applyKonaneMove,
   initialKonaneBoard,
+  initialMiniShogiBoard,
+  initialMorrisState,
+  applyMiniShogiMove,
+  applyMorrisAction,
+  applyTwelveJanggiComputerMove,
+  listMiniShogiLegalMoves,
+  listMorrisLegalActions,
+  listTwelveJanggiLegalMoves,
   listDomineeringLegalMoves,
   listHexLegalMoves,
   listKonaneLegalMoves,
   makeMatrix,
+  selectChessComputerMove,
   selectDomineeringComputerMove,
   selectHexComputerMove,
   selectKonaneComputerMove,
+  selectMiniShogiComputerMove,
+  selectMorrisComputerAction,
+  selectTwelveJanggiComputerMove,
   selectXoComputerMove,
   type CellOwner,
   type DomineeringPlayer,
@@ -86,5 +100,55 @@ describe("board game opponent selectors", () => {
     const board = makeMatrix<"B" | "W" | null>(4, null);
     board[0][0] = "B";
     expect(selectKonaneComputerMove({ board, player: "B", difficulty: "easy" })).toBeNull();
+  });
+
+  it("returns legal Morris actions and leaves the state unchanged", () => {
+    const state = { ...initialMorrisState(), currentPlayer: "B" as const };
+    const before = JSON.stringify(state);
+    const action = selectMorrisComputerAction({ state, difficulty: "normal", random: () => 0 });
+
+    expect(action).not.toBeNull();
+    expect(listMorrisLegalActions(state)).toContainEqual(action);
+    expect(applyMorrisAction(state, action!)).not.toBeNull();
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("returns legal Mini Shogi moves and leaves inputs unchanged", () => {
+    const board = initialMiniShogiBoard();
+    const hands = { A: [], B: [] };
+    const before = JSON.stringify({ board, hands });
+    const move = selectMiniShogiComputerMove({ board, hands, player: "B", difficulty: "normal", random: () => 0 });
+
+    expect(move).not.toBeNull();
+    expect(listMiniShogiLegalMoves(board, hands, "B")).toContainEqual(move);
+    expect(applyMiniShogiMove(board, hands, "B", move!)).not.toBeNull();
+    expect(JSON.stringify({ board, hands })).toBe(before);
+  });
+
+  it("returns legal Twelve Janggi moves and leaves state unchanged", () => {
+    const state = { ...createInitialTwelveJanggiState(), currentPlayer: "B" as const };
+    const before = JSON.stringify(state);
+    const move = selectTwelveJanggiComputerMove({ state, difficulty: "normal", random: () => 0 });
+
+    expect(move).not.toBeNull();
+    expect(listTwelveJanggiLegalMoves(state)).toContainEqual(move);
+    expect(applyTwelveJanggiComputerMove(state, move!)).not.toBeNull();
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("returns legal chess moves and null when no legal move exists", () => {
+    const game = new Chess();
+    game.move("f3");
+    const move = selectChessComputerMove({ fen: game.fen(), difficulty: "normal", random: () => 0 });
+
+    expect(move).not.toBeNull();
+    expect(game.moves({ verbose: true }).map((legal) => `${legal.from}${legal.to}`)).toContain(`${move!.from}${move!.to}`);
+
+    const mate = new Chess();
+    mate.move("f3");
+    mate.move("e5");
+    mate.move("g4");
+    mate.move("Qh4#");
+    expect(selectChessComputerMove({ fen: mate.fen(), difficulty: "normal" })).toBeNull();
   });
 });

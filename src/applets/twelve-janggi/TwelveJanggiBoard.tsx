@@ -10,11 +10,13 @@ import {
 import { BoardCoordinates } from "../GameUi";
 
 type TwelveJanggiBoardProps = {
+  disabled?: boolean;
   state: GameState;
   onSquareClick: (square: Square) => void;
 };
 
 export function TwelveJanggiBoard({
+  disabled = false,
   state,
   onSquareClick,
 }: TwelveJanggiBoardProps) {
@@ -61,6 +63,7 @@ export function TwelveJanggiBoard({
                     .filter(Boolean)
                     .join(" ")}
                   key={key}
+                  disabled={disabled}
                   onClick={() => onSquareClick(square)}
                   role="gridcell"
                   type="button"

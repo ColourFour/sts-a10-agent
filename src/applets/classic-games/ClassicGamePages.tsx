@@ -7,16 +7,22 @@ import {
   applyDomineeringMove,
   applyHexMove,
   applyKonaneMove,
+  applyMiniShogiMove as applyAiMiniShogiMove,
+  applyMorrisAction as applyAiMorrisAction,
   canPlaceDomino,
   computerThinkingDelayMs,
   initialKonaneBoard,
   legalKonaneJumps,
+  listMorrisLegalActions as listAiMorrisLegalActions,
   makeMatrix,
   otherPlayer,
   pointKey,
   selectDomineeringComputerMove,
   selectHexComputerMove,
   selectKonaneComputerMove,
+  selectChessComputerMove,
+  selectMiniShogiComputerMove,
+  selectMorrisComputerAction,
   type CellOwner,
   type DomineeringPlayer,
   type GameMode,
@@ -755,6 +761,11 @@ function morrisHasMove(board: Record<string, CellOwner>, player: PlayerMark): bo
 
 export function NineMensMorrisPage() {
   const [state, setState] = useState<MorrisState>(() => initialMorrisState());
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
+  const aiTurnRef = useRef(0);
+  const isComputerTurn = gameMode === "computer" && state.currentPlayer === "B" && !state.winner;
   const morrisLegalTargets = new Set(
     state.phase === "moving" && state.selected
       ? morrisLegalDestinations(state.board, state.selected, state.currentPlayer)
@@ -791,6 +802,10 @@ export function NineMensMorrisPage() {
   }
 
   function clickPoint(key: string) {
+    if (computerThinking || isComputerTurn) {
+      return;
+    }
+
     if (state.winner) {
       return;
     }
@@ -850,12 +865,72 @@ export function NineMensMorrisPage() {
     setState({ ...state, selected: state.board[key] === state.currentPlayer ? key : null });
   }
 
+  function reset() {
+    aiTurnRef.current += 1;
+    setState(initialMorrisState());
+    setComputerThinking(false);
+  }
+
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setState((currentState) => {
+        if (currentState.winner || currentState.currentPlayer !== "B") {
+          setComputerThinking(false);
+          return currentState;
+        }
+
+        const action = selectMorrisComputerAction({ state: currentState, difficulty });
+        if (!action) {
+          setComputerThinking(false);
+          return {
+            ...currentState,
+            winner: "A",
+            message: "Player A wins because Player B has no legal move.",
+          };
+        }
+
+        const nextState = applyAiMorrisAction(currentState, action);
+        setComputerThinking(false);
+        return nextState ?? currentState;
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, isComputerTurn, state]);
+
   return (
     <AppletPageShell title="Nine Men's Morris" subtitle="Place, mill, remove, then slide pieces around the classic 24-point board.">
       <section className="mini-game-layout">
         <aside className="side-panel">
-          <ResetButton onClick={() => setState(initialMorrisState())} />
-          <StatusCard message={state.message} title={`Player ${state.currentPlayer}`} winner={state.winner ? `Player ${state.winner}` : null} />
+          <ResetButton onClick={reset} />
+          <SoloModeControls
+            difficulty={difficulty}
+            gameMode={gameMode}
+            onDifficultyChange={setDifficulty}
+            onModeChange={(mode) => {
+              aiTurnRef.current += 1;
+              setComputerThinking(false);
+              setGameMode(mode);
+            }}
+          />
+          <StatusCard
+            message={`${gameMode === "computer" ? "Playing vs Computer. You control Player A; the computer controls Player B. " : ""}${computerThinking ? "Computer is thinking." : state.message}`}
+            title={computerThinking ? "Computer thinking" : `Player ${state.currentPlayer}`}
+            winner={state.winner ? `Player ${state.winner}` : null}
+          />
         </aside>
         <section className="board-panel">
           <div className="morris-board">
@@ -865,6 +940,7 @@ export function NineMensMorrisPage() {
                 <button
                   aria-label={`Morris point ${key}`}
                   className={`morris-point owner-${state.board[key] ?? "empty"} ${state.selected === key ? "selected" : ""} ${morrisLegalTargets.has(key) ? "legal-target" : ""}`}
+                  disabled={computerThinking || isComputerTurn}
                   key={key}
                   onClick={() => clickPoint(key)}
                   style={{ gridColumn: point.col + 1, gridRow: point.row + 1 }}
@@ -900,6 +976,13 @@ export function NineMensMorrisPage() {
                 "Select one of your pieces, then move it to a highlighted adjacent empty point.",
                 "If you have exactly three pieces, you may fly to any empty point.",
                 "You cannot remove a piece from an enemy mill unless every enemy piece is in a mill.",
+              ],
+            },
+            {
+              title: "Solo mode",
+              items: [
+                "Choose Play vs Computer to play Player A against a computer Player B.",
+                "The computer handles placement, movement, and mill removals with legal actions only.",
               ],
             },
           ]}
@@ -1200,9 +1283,14 @@ export function MiniShogiPage() {
   const [hands, setHands] = useState<Record<PlayerMark, MiniKind[]>>({ A: [], B: [] });
   const [dropKind, setDropKind] = useState<MiniKind | null>(null);
   const [winner, setWinner] = useState<PlayerMark | null>(null);
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
   const [message, setMessage] = useState(
     "Player A starts. Select one of your pieces to see legal moves.",
   );
+  const aiTurnRef = useRef(0);
+  const isComputerTurn = gameMode === "computer" && currentPlayer === "B" && !winner;
 
   const legalTargets = new Set(
     selected
@@ -1213,6 +1301,10 @@ export function MiniShogiPage() {
   );
 
   function moveOrDrop(point: Point) {
+    if (computerThinking || isComputerTurn) {
+      return;
+    }
+
     if (winner) {
       setMessage("The game is over. Reset the board to play again.");
       return;
@@ -1276,26 +1368,86 @@ export function MiniShogiPage() {
   }
 
   function reset() {
+    aiTurnRef.current += 1;
     setBoard(initialMiniShogiBoard());
     setCurrentPlayer("A");
     setSelected(null);
     setHands({ A: [], B: [] });
     setDropKind(null);
     setWinner(null);
+    setComputerThinking(false);
     setMessage("New game started. Player A to move.");
   }
+
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setBoard((currentBoard) => {
+        const move = selectMiniShogiComputerMove({ board: currentBoard, hands, player: "B", difficulty });
+        if (!move) {
+          setWinner("A");
+          setComputerThinking(false);
+          setMessage("Player A wins because Player B has no legal move.");
+          return currentBoard;
+        }
+
+        const result = applyAiMiniShogiMove(currentBoard, hands, "B", move);
+        if (!result) {
+          setComputerThinking(false);
+          return currentBoard;
+        }
+
+        setHands(result.hands as Record<PlayerMark, MiniKind[]>);
+        setSelected(null);
+        setDropKind(null);
+        setWinner(result.winner);
+        setCurrentPlayer(result.nextPlayer);
+        setMessage(result.winner ? "Player B captured the King and wins." : "Computer moved. Player A to move.");
+        setComputerThinking(false);
+        return result.board as MiniBoard;
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, hands, isComputerTurn]);
 
   return (
     <AppletPageShell title="Mini Shogi" subtitle="A small shogi-style board with captures, drops, and promotion.">
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
-          <StatusCard message={message} title={`Player ${currentPlayer} to move`} winner={winner ? `Player ${winner}` : null} />
+          <SoloModeControls
+            difficulty={difficulty}
+            gameMode={gameMode}
+            onDifficultyChange={setDifficulty}
+            onModeChange={(mode) => {
+              aiTurnRef.current += 1;
+              setComputerThinking(false);
+              setGameMode(mode);
+            }}
+          />
+          <StatusCard
+            message={`${gameMode === "computer" ? "Playing vs Computer. You control Player A; the computer controls Player B. " : ""}${computerThinking ? "Computer is thinking." : message}`}
+            title={computerThinking ? "Computer thinking" : `Player ${currentPlayer} to move`}
+            winner={winner ? `Player ${winner}` : null}
+          />
           <TutorialButton gameId="mini-shogi" steps={miniShogiTutorial} />
           <KeyboardHints hints={["Tab: focus square", "Enter/Space: select"]} />
           <div className="hand-pieces">
             {hands[currentPlayer].length === 0 ? <p className="empty-hand">No captured pieces</p> : hands[currentPlayer].map((kind, index) => (
-              <button className={`hand-piece ${dropKind === kind ? "selected" : ""}`} key={`${kind}-${index}`} onClick={() => { setSelected(null); setDropKind(kind); setMessage(`${miniPieceNames[kind]} selected from hand. Drop it on a highlighted empty square.`); }} type="button">
+              <button className={`hand-piece ${dropKind === kind ? "selected" : ""}`} disabled={computerThinking || isComputerTurn} key={`${kind}-${index}`} onClick={() => { setSelected(null); setDropKind(kind); setMessage(`${miniPieceNames[kind]} selected from hand. Drop it on a highlighted empty square.`); }} type="button">
                 <span>{miniPieceNames[kind]}</span>
                 <strong>drop</strong>
               </button>
@@ -1309,7 +1461,7 @@ export function MiniShogiPage() {
                 row.map((cell, colIndex) => {
                   const key = `${rowIndex}:${colIndex}`;
                   return (
-                    <button aria-label={cell ? `${miniPieceNames[cell.kind]} for Player ${cell.owner}` : `Mini Shogi square ${rowIndex + 1}, ${colIndex + 1}`} className={`mini-cell owner-${cell?.owner ?? "empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`} key={key} onClick={() => moveOrDrop({ row: rowIndex, col: colIndex })} type="button">
+                    <button aria-label={cell ? `${miniPieceNames[cell.kind]} for Player ${cell.owner}` : `Mini Shogi square ${rowIndex + 1}, ${colIndex + 1}`} className={`mini-cell owner-${cell?.owner ?? "empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`} disabled={computerThinking || isComputerTurn} key={key} onClick={() => moveOrDrop({ row: rowIndex, col: colIndex })} type="button">
                       {cell ? (
                         <span className={`shogi-token shogi-${cell.owner}`}>
                           <span>{cell.kind}</span>
@@ -1350,6 +1502,13 @@ export function MiniShogiPage() {
                 "B slides diagonally, R slides orthogonally, and P moves one square forward.",
                 "Pawn, Silver, Bishop, and Rook promote automatically on the far rank.",
                 "Pawns cannot be dropped on the far rank because they would have no forward move.",
+              ],
+            },
+            {
+              title: "Solo mode",
+              items: [
+                "Choose Play vs Computer to play Player A against a computer Player B.",
+                "The computer uses legal moves and legal drops, preferring captures on Normal.",
               ],
             },
           ]}
@@ -1423,27 +1582,40 @@ const miniShogiTutorial: TutorialStep[] = [
 export function ChessPage() {
   const [game, setGame] = useState(() => new Chess());
   const [selected, setSelected] = useState<ChessSquare | null>(null);
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
   const [message, setMessage] = useState("White to move.");
+  const aiTurnRef = useRef(0);
 
   const legalTargets = new Set(
     selected ? game.moves({ square: selected, verbose: true }).map((move) => move.to) : [],
   );
+  const isComputerTurn = gameMode === "computer" && game.turn() === "b" && !game.isGameOver();
   const chessWinner = game.isCheckmate() ? (game.turn() === "w" ? "Black" : "White") : null;
   const chessTitle = chessWinner
     ? "Checkmate"
     : game.isDraw()
       ? "Draw"
+      : computerThinking
+        ? "Computer thinking"
       : game.turn() === "w"
         ? "White to move"
         : "Black to move";
 
   function reset() {
+    aiTurnRef.current += 1;
     setGame(new Chess());
     setSelected(null);
+    setComputerThinking(false);
     setMessage("White to move.");
   }
 
   function clickSquare(square: ChessSquare) {
+    if (computerThinking || isComputerTurn) {
+      return;
+    }
+
     if (game.isGameOver()) {
       setSelected(null);
       setMessage("The game is over. Reset the board to play again.");
@@ -1474,6 +1646,51 @@ export function ChessPage() {
     }
   }
 
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setGame((currentGame) => {
+        if (currentGame.isGameOver() || currentGame.turn() !== "b") {
+          setComputerThinking(false);
+          return currentGame;
+        }
+
+        const move = selectChessComputerMove({ fen: currentGame.fen(), difficulty });
+        if (!move) {
+          setComputerThinking(false);
+          return currentGame;
+        }
+
+        const nextGame = new Chess(currentGame.fen());
+        nextGame.move({ from: move.from as ChessSquare, to: move.to as ChessSquare, promotion: move.promotion ?? "q" });
+        setSelected(null);
+        setComputerThinking(false);
+        setMessage(
+          nextGame.isCheckmate()
+            ? "Black wins by checkmate."
+            : nextGame.isDraw()
+              ? "Game drawn."
+              : `Computer moved. White to move${nextGame.inCheck() ? " - check" : ""}.`,
+        );
+        return nextGame;
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, isComputerTurn]);
+
   const rows = game.board();
 
   return (
@@ -1481,7 +1698,21 @@ export function ChessPage() {
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
-          <StatusCard message={message} title={chessTitle} winner={chessWinner} />
+          <SoloModeControls
+            difficulty={difficulty}
+            gameMode={gameMode}
+            onDifficultyChange={setDifficulty}
+            onModeChange={(mode) => {
+              aiTurnRef.current += 1;
+              setComputerThinking(false);
+              setGameMode(mode);
+            }}
+          />
+          <StatusCard
+            message={`${gameMode === "computer" ? "Playing vs Computer. You control White; the computer controls Black. " : ""}${computerThinking ? "Computer is thinking." : message}`}
+            title={chessTitle}
+            winner={chessWinner}
+          />
           <TutorialButton gameId="chess" steps={chessTutorial} />
           <KeyboardHints hints={["Tab: focus square", "Enter/Space: move", "Esc: close tutorial"]} />
         </aside>
@@ -1499,6 +1730,7 @@ export function ChessPage() {
                           : `${square}: empty`
                       }
                       className={`mini-cell chess-cell ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${selected === square ? "selected" : ""} ${legalTargets.has(square) ? "legal-target" : ""}`}
+                      disabled={computerThinking || isComputerTurn}
                       key={square}
                       onClick={() => clickSquare(square)}
                       type="button"
@@ -1538,6 +1770,13 @@ export function ChessPage() {
               items: [
                 "Pawn promotion automatically chooses a Queen.",
                 "The board uses compact piece labels: WQ is White Queen, BK is Black King, and so on.",
+              ],
+            },
+            {
+              title: "Solo mode",
+              items: [
+                "Choose Play vs Computer to play White against a computer Black player.",
+                "The computer uses chess.js legal moves and prefers captures, checks, and checkmates on Normal.",
               ],
             },
           ]}

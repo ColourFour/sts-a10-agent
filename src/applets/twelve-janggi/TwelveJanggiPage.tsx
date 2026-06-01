@@ -1,6 +1,13 @@
 import { RotateCcw, Undo2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KeyboardHints, TutorialButton, type TutorialStep } from "../GameUi";
+import {
+  applyTwelveJanggiComputerMove,
+  computerThinkingDelayMs,
+  selectTwelveJanggiComputerMove,
+  type GameMode,
+  type OpponentDifficulty,
+} from "../boardGameOpponents";
 import {
   applyDrop,
   applyMove,
@@ -81,10 +88,12 @@ function handButtonLabel(player: Player, kind: PieceKind, count: number) {
 }
 
 function HandPanel({
+  disabled = false,
   player,
   state,
   onSelect,
 }: {
+  disabled?: boolean;
   player: Player;
   state: GameState;
   onSelect: (player: Player, kind: PieceKind) => void;
@@ -117,7 +126,7 @@ function HandPanel({
                 ]
                   .filter(Boolean)
                   .join(" ")}
-                disabled={!isActive}
+                disabled={disabled || !isActive}
                 key={kind}
                 onClick={() => onSelect(player, kind)}
                 type="button"
@@ -139,16 +148,27 @@ export function TwelveJanggiPage() {
   const [state, setState] = useState<GameState>(() =>
     createInitialTwelveJanggiState(),
   );
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
   const [message, setMessage] = useState(
     "Player A starts. Select a piece to see legal moves.",
   );
+  const aiTurnRef = useRef(0);
+  const isComputerTurn = gameMode === "computer" && state.currentPlayer === "B" && !state.winner;
 
   function resetGame() {
+    aiTurnRef.current += 1;
     setState(createInitialTwelveJanggiState());
+    setComputerThinking(false);
     setMessage("New game started. Player A to move.");
   }
 
   function handleSquareClick(square: Square) {
+    if (computerThinking || isComputerTurn) {
+      return;
+    }
+
     if (state.winner) {
       setMessage("The game is over. Reset to play again.");
       return;
@@ -216,6 +236,10 @@ export function TwelveJanggiPage() {
   }
 
   function handleHandSelect(player: Player, kind: PieceKind) {
+    if (computerThinking || isComputerTurn) {
+      return;
+    }
+
     if (state.winner) {
       return;
     }
@@ -233,6 +257,49 @@ export function TwelveJanggiPage() {
         : `${PIECE_LABELS[kind]} has no legal drop squares.`,
     );
   }
+
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setState((currentState) => {
+        if (currentState.winner || currentState.currentPlayer !== "B") {
+          setComputerThinking(false);
+          return currentState;
+        }
+
+        const move = selectTwelveJanggiComputerMove({ state: currentState, difficulty });
+        if (!move) {
+          setComputerThinking(false);
+          setMessage("Player A wins because Player B has no legal move.");
+          return { ...currentState, winner: "A" };
+        }
+
+        const nextState = applyTwelveJanggiComputerMove(currentState, move);
+        if (!nextState) {
+          setComputerThinking(false);
+          return currentState;
+        }
+
+        setMessage(nextState.winner ? "Player B wins." : "Computer moved. Player A to move.");
+        setComputerThinking(false);
+        return nextState;
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, isComputerTurn, state]);
 
   const pendingThreat = state.pendingKingTerritoryThreat;
 
@@ -267,7 +334,9 @@ export function TwelveJanggiPage() {
             <h2>
               {state.winner
                 ? `Player ${state.winner} wins`
-                : `Player ${state.currentPlayer} to move`}
+                : computerThinking
+                  ? "Computer thinking"
+                  : `Player ${state.currentPlayer} to move`}
             </h2>
             {pendingThreat && !state.winner ? (
               <p className="threat-note">
@@ -277,10 +346,49 @@ export function TwelveJanggiPage() {
             ) : null}
           </div>
 
+          <section className="turn-card solo-mode-card" aria-label="Game mode">
+            <p className="eyebrow">Mode</p>
+            <div className="button-row">
+              <button
+                aria-pressed={gameMode === "twoPlayer"}
+                className={`secondary-button ${gameMode === "twoPlayer" ? "primary-action" : ""}`}
+                onClick={() => {
+                  aiTurnRef.current += 1;
+                  setComputerThinking(false);
+                  setGameMode("twoPlayer");
+                }}
+                type="button"
+              >
+                Two Player
+              </button>
+              <button
+                aria-pressed={gameMode === "computer"}
+                className={`secondary-button ${gameMode === "computer" ? "primary-action" : ""}`}
+                onClick={() => {
+                  aiTurnRef.current += 1;
+                  setComputerThinking(false);
+                  setGameMode("computer");
+                }}
+                type="button"
+              >
+                Play vs Computer
+              </button>
+            </div>
+            {gameMode === "computer" ? (
+              <label className="field">
+                <span>Difficulty</span>
+                <select value={difficulty} onChange={(event) => setDifficulty(event.target.value as OpponentDifficulty)}>
+                  <option value="easy">Easy</option>
+                  <option value="normal">Normal</option>
+                </select>
+              </label>
+            ) : null}
+          </section>
+
           <TutorialButton gameId="twelve-janggi" steps={twelveJanggiTutorial} />
           <KeyboardHints hints={["Tab: focus square", "Enter/Space: select", "Esc: close tutorial"]} />
-          <HandPanel player="A" state={state} onSelect={handleHandSelect} />
-          <HandPanel player="B" state={state} onSelect={handleHandSelect} />
+          <HandPanel disabled={computerThinking || isComputerTurn} player="A" state={state} onSelect={handleHandSelect} />
+          <HandPanel disabled={computerThinking || isComputerTurn} player="B" state={state} onSelect={handleHandSelect} />
         </aside>
 
         <section className="board-panel" aria-label="Twelve Janggi play area">
@@ -290,11 +398,11 @@ export function TwelveJanggiPage() {
             </div>
           ) : null}
 
-          <TwelveJanggiBoard state={state} onSquareClick={handleSquareClick} />
+          <TwelveJanggiBoard disabled={computerThinking || isComputerTurn} state={state} onSquareClick={handleSquareClick} />
 
           <div className="feedback" role="status" aria-live="polite">
             <strong>{state.winner ? "Game over" : "Rule check"}</strong>
-            <span>{message}</span>
+            <span>{gameMode === "computer" ? `Playing vs Computer. You control Player A; the computer controls Player B. ${computerThinking ? "Computer is thinking." : message}` : message}</span>
           </div>
         </section>
 
@@ -322,6 +430,14 @@ export function TwelveJanggiPage() {
               <li>Captured non-King pieces enter the capturer's hand and may be dropped later as that player's piece.</li>
               <li>Feudal Lords become Men when captured.</li>
               <li>Hand pieces cannot be dropped into the opponent's territory row.</li>
+            </ul>
+          </section>
+
+          <section className="rules-section">
+            <h3>Solo mode</h3>
+            <ul>
+              <li>Choose Play vs Computer to play Player A against a computer Player B.</li>
+              <li>The computer uses legal moves and drops, preferring captures on Normal.</li>
             </ul>
           </section>
 

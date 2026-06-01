@@ -2,12 +2,16 @@
 
 ## Summary
 
-This pass adds real Play vs Computer modes for four board games:
+This pass adds real Play vs Computer modes for eight board games:
 
 - XO Game Lab
 - Hex
 - Domineering
 - Konane
+- Nine Men's Morris
+- Chess
+- Twelve Janggi
+- Mini Shogi
 
 Each supported game now offers Two Player and Play vs Computer mode controls before or during play. In solo mode the human controls the first side and the computer controls the second side. Computer turns show a visible thinking state, human interaction is disabled while the computer is moving, and reset cancels pending computer turns.
 
@@ -21,7 +25,8 @@ It contains:
 - Shared point, board, matrix, cloning, and random-move helpers.
 - Pure legal-move helpers for Hex, Domineering, and Konane.
 - Pure apply-move helpers for Hex, Domineering, and Konane.
-- Computer move selectors for XO, Hex, Domineering, and Konane.
+- Pure action helpers for Nine Men's Morris and Mini Shogi.
+- Computer move selectors for XO, Hex, Domineering, Konane, Nine Men's Morris, Chess, Twelve Janggi, and Mini Shogi.
 - A shared `computerThinkingDelayMs` used by the UI.
 
 The AI selectors are pure and do not mutate input state. Random selection is isolated behind helper functions so tests can inject deterministic random behavior.
@@ -96,13 +101,76 @@ Behavior:
 - Game-over detection checks whether the next player has a legal jump.
 - Reset cancels pending computer moves.
 
+### Nine Men's Morris
+
+Human side: Player A.
+
+Computer side: Player B.
+
+Difficulty:
+
+- Easy: random legal phase action.
+- Normal: prefers mills, legal removals, material advantage, and lower opponent action count.
+
+Behavior:
+
+- The AI handles placement, movement, flying at three pieces, and mill removal.
+- The computer may take consecutive phase actions when it forms a mill and must remove a piece.
+- Reset cancels pending computer actions.
+
+### Chess
+
+Human side: White.
+
+Computer side: Black.
+
+Difficulty:
+
+- Easy: random `chess.js` legal move.
+- Normal: prefers checkmate, captures by material value, and checking moves.
+
+Behavior:
+
+- The AI uses `chess.js` legal moves only.
+- Pawn promotion defaults to Queen, matching the existing UI behavior.
+- Reset cancels pending computer moves.
+
+### Twelve Janggi
+
+Human side: Player A.
+
+Computer side: Player B.
+
+Difficulty:
+
+- Easy: random legal move or drop.
+- Normal: prefers King captures, captures by material value, and moves over drops when scores tie.
+
+Behavior:
+
+- The AI uses the existing Twelve Janggi engine for legal moves, legal drops, captures, promotion, and King-territory win checks.
+- Reset cancels pending computer moves.
+
+### Mini Shogi
+
+Human side: Player A.
+
+Computer side: Player B.
+
+Difficulty:
+
+- Easy: random legal move or drop.
+- Normal: prefers King captures, captures by material value, and future mobility.
+
+Behavior:
+
+- The AI handles legal board moves, captures, drops, and automatic promotion.
+- Captured non-King pieces are added to the computer hand and may be dropped later.
+- Reset cancels pending computer moves.
+
 ## Deferred Games
 
-Nine Men's Morris was deferred from AI support in this pass. The current page has placement, movement, mill, and removal phases in one component, and the AI would need reliable phase-aware action modeling before it is worth exposing as a user-facing solo mode.
-
-Chess was deferred. The project already uses `chess.js`, but this pass focused on adding a reusable opponent layer and completing simpler board games first without risking the chess UI.
-
-Twelve Janggi and Mini Shogi were deferred. They are good candidates for a later legal-move random opponent pass, but were outside the quality target after completing four simpler games.
+No requested game remains deferred in the current implementation.
 
 ## Tests Added
 
@@ -118,6 +186,10 @@ Coverage includes:
 - Domineering AI returns null when no placement exists.
 - Konane AI returns only legal jumps and does not mutate input.
 - Konane AI returns null when no jump exists.
+- Nine Men's Morris AI returns legal actions and does not mutate input state.
+- Mini Shogi AI returns legal moves/drops and does not mutate board or hand inputs.
+- Twelve Janggi AI returns legal engine-backed moves/drops and does not mutate state.
+- Chess AI returns `chess.js` legal moves and null after game over.
 
 Updated `src/applets/appletInteraction.test.tsx` with a Play vs Computer smoke test for XO:
 
@@ -138,6 +210,10 @@ Checked:
 - Hex: selected Play vs Computer, made a human move, confirmed one legal computer stone, reset, confirmed empty board.
 - Domineering: selected Play vs Computer, made a vertical placement, confirmed one horizontal computer domino, reset, confirmed empty board.
 - Konane: selected Play vs Computer, made a black capture, confirmed white computer capture and return to Black, reset, confirmed clean state.
+- Nine Men's Morris: selected Play vs Computer, made a placement, confirmed Player B placed legally, reset, confirmed clean state.
+- Chess: selected Play vs Computer, made a White move, confirmed Black responded with a legal `chess.js` move, reset, confirmed initial position.
+- Twelve Janggi: selected Play vs Computer, made a Player A move, confirmed Player B responded legally, reset, confirmed initial position.
+- Mini Shogi: selected Play vs Computer, made a Player A move, confirmed Player B responded legally, reset, confirmed initial position.
 
 ## Validation Run
 
@@ -159,12 +235,12 @@ There is no `test:e2e` script in `package.json`, so `npm run test:e2e --if-prese
 - Hard difficulty was not added because the implemented games do not yet have safe shallow minimax that is worth exposing.
 - Normal heuristics are mobility and position based, not strategic engines.
 - Konane currently models one jump per turn, matching the existing prototype rules.
-- Nine Men's Morris needs a cleaner phase/action engine before AI should be exposed.
+- Nine Men's Morris and Mini Shogi still have duplicated page-level and opponent-level rule helpers; a future refactor should consolidate those into single engines.
 
 ## Recommended Next AI Pass
 
-- Extract Nine Men's Morris into a pure phase-aware engine, then add a legal AI for placement, movement, and removal.
-- Add Chess Easy and Normal using `chess.js` legal moves, material scoring, captures, and checks.
-- Add Twelve Janggi and Mini Shogi random legal-move opponents if their legal move APIs remain stable.
+- Consolidate Nine Men's Morris and Mini Shogi page logic into dedicated pure engine files.
+- Add stronger Chess Normal with one-ply safety checks and basic checkmate avoidance.
+- Add shallow minimax only for small games where performance is predictable.
 - Add reusable React opponent-turn hook to reduce duplicated timer/cancellation code across game pages.
-- Add browser-level smoke coverage for Hex, Domineering, and Konane solo mode in addition to XO.
+- Add browser-level smoke coverage for every solo game, not just unit selectors and the XO interaction test.
