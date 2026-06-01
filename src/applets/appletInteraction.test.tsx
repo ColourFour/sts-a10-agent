@@ -86,6 +86,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -133,6 +134,39 @@ describe("applet completion flows", () => {
     expect(screen.getByRole("heading", { name: "X to move" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /Blank square 1 on strip 1/i }));
     expect(screen.getByRole("heading", { name: "O to move" })).toBeTruthy();
+  });
+
+  it("plays XO Game Lab vs computer and cancels stale computer turns on reset", async () => {
+    const user = userEvent.setup();
+    renderRoute("/applets/xo-game-lab");
+
+    const stripInput = screen.getByLabelText(/Strip lengths/i);
+    fireEvent.change(stripInput, { target: { value: "2,2" } });
+    fireEvent.blur(stripInput);
+
+    await user.click(screen.getByRole("button", { name: "Play vs Computer" }));
+    await user.click(screen.getByRole("button", { name: /Blank square 1 on strip 1/i }));
+    expect(screen.getByRole("heading", { name: "Computer thinking" })).toBeTruthy();
+
+    expect(await screen.findByRole("heading", { name: "X to move" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Blue" }));
+    let nextHumanMove = document.querySelector<HTMLButtonElement>(".xo-square.valid-move");
+    if (!nextHumanMove) {
+      await user.click(screen.getByRole("button", { name: "Red" }));
+      nextHumanMove = document.querySelector<HTMLButtonElement>(".xo-square.valid-move");
+    }
+    expect(nextHumanMove).toBeTruthy();
+    await user.click(nextHumanMove!);
+    expect(screen.getByRole("heading", { name: "Computer thinking" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /Reset/i }));
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 550));
+    });
+
+    expect(screen.getByRole("heading", { name: "X to move" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /Blank square/i })).toHaveLength(4);
   });
 
   it("completes Twelve Janggi by capturing the King, rejects an off-turn piece, resets, and replays", async () => {

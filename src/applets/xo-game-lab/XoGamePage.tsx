@@ -1,5 +1,11 @@
 import { Eye, EyeOff, FlaskConical, RotateCcw, Undo2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  computerThinkingDelayMs,
+  selectXoComputerMove,
+  type GameMode,
+  type OpponentDifficulty,
+} from "../boardGameOpponents";
 import {
   DEFAULT_STRIP_INPUT,
   applyMove,
@@ -42,6 +48,11 @@ export function XoGamePage() {
   );
   const [showValidMoves, setShowValidMoves] = useState(true);
   const [inputError, setInputError] = useState<string | null>(null);
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
+  const aiTurnRef = useRef(0);
+  const isComputerTurn = gameMode === "computer" && game.currentPlayer === "O" && !game.winner;
 
   const legalMoves = useMemo(
     () =>
@@ -68,10 +79,12 @@ export function XoGamePage() {
 
   function resetGame(nextInput = stripInput) {
     try {
+      aiTurnRef.current += 1;
       const nextGame = buildInitialGame(nextInput);
       setGame(nextGame);
       setStripInput(nextInput);
       setInputError(null);
+      setComputerThinking(false);
       setFeedback(
         "Board reset. X starts, and the blank-strip rule is active until every strip has at least one mark.",
       );
@@ -81,6 +94,10 @@ export function XoGamePage() {
   }
 
   function playSquare(stripIndex: number, cellIndex: number) {
+    if (computerThinking || isComputerTurn) {
+      return;
+    }
+
     if (game.winner) {
       setFeedback("The game is over. Reset the board to play again.");
       return;
@@ -112,6 +129,64 @@ export function XoGamePage() {
       `${game.currentPlayer} placed a ${selectedColor} mark. ${result.nextPlayer} to move.`,
     );
   }
+
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    setFeedback("Computer is thinking.");
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setGame((currentGame) => {
+        if (currentGame.winner || currentGame.currentPlayer !== "O") {
+          setComputerThinking(false);
+          return currentGame;
+        }
+
+        const move = selectXoComputerMove({
+          board: currentGame.board,
+          player: "O",
+          difficulty,
+        });
+
+        if (!move) {
+          setComputerThinking(false);
+          setFeedback("Computer has no legal move. X wins.");
+          return { ...currentGame, winner: "X" };
+        }
+
+        const result = applyMove(currentGame.board, "O", move);
+        if (!result.ok) {
+          setComputerThinking(false);
+          setFeedback(`Computer move blocked: ${result.reason}`);
+          return currentGame;
+        }
+
+        setComputerThinking(false);
+        setFeedback(
+          result.winner
+            ? `O wins. X has no valid move.`
+            : `Computer placed a ${move.color} mark. X to move.`,
+        );
+        return {
+          board: result.board,
+          currentPlayer: result.nextPlayer,
+          winner: result.winner,
+        };
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, isComputerTurn]);
 
   return (
     <main className="shell xo-shell game-shell theme-xo-game-lab">
@@ -158,6 +233,45 @@ export function XoGamePage() {
             />
           </label>
           {inputError ? <p className="error-text">{inputError}</p> : null}
+
+          <section className="turn-card solo-mode-card" aria-label="Game mode">
+            <p className="eyebrow">Mode</p>
+            <div className="button-row">
+              <button
+                aria-pressed={gameMode === "twoPlayer"}
+                className={`secondary-button ${gameMode === "twoPlayer" ? "primary-action" : ""}`}
+                onClick={() => {
+                  aiTurnRef.current += 1;
+                  setComputerThinking(false);
+                  setGameMode("twoPlayer");
+                }}
+                type="button"
+              >
+                Two Player
+              </button>
+              <button
+                aria-pressed={gameMode === "computer"}
+                className={`secondary-button ${gameMode === "computer" ? "primary-action" : ""}`}
+                onClick={() => {
+                  aiTurnRef.current += 1;
+                  setComputerThinking(false);
+                  setGameMode("computer");
+                }}
+                type="button"
+              >
+                Play vs Computer
+              </button>
+            </div>
+            {gameMode === "computer" ? (
+              <label className="field">
+                <span>Difficulty</span>
+                <select value={difficulty} onChange={(event) => setDifficulty(event.target.value as OpponentDifficulty)}>
+                  <option value="easy">Easy</option>
+                  <option value="normal">Normal</option>
+                </select>
+              </label>
+            ) : null}
+          </section>
 
           <div className="button-row" aria-label="Color choice">
             {(["red", "blue"] as MoveColor[]).map((color) => (
@@ -207,8 +321,13 @@ export function XoGamePage() {
               <h2>
                 {game.winner
                   ? `${game.winner} wins`
-                  : `${game.currentPlayer} to move`}
+                  : computerThinking
+                    ? "Computer thinking"
+                    : `${game.currentPlayer} to move`}
               </h2>
+              {gameMode === "computer" ? (
+                <p className="helper-text">Playing vs Computer. You control X; the computer controls O.</p>
+              ) : null}
             </div>
             <div className={`xo-token token-${game.currentPlayer}`}>
               {game.currentPlayer}
@@ -249,6 +368,7 @@ export function XoGamePage() {
                           className={`xo-square ${
                             cell ? `filled ${cell.color}` : "blank"
                           } ${showValidMoves && isLegal ? "valid-move" : ""}`}
+                          disabled={computerThinking || isComputerTurn}
                           key={cellIndex}
                           onClick={() => playSquare(stripIndex, cellIndex)}
                           type="button"
@@ -309,6 +429,14 @@ export function XoGamePage() {
               <li>While any strip is completely blank, you must play on a completely blank strip.</li>
               <li>After every strip has at least one mark, any legal blank square may be used.</li>
               <li>A new mark cannot match the symbol or color of an adjacent filled square on the same strip.</li>
+            </ul>
+          </section>
+
+          <section className="rules-section">
+            <h3>Solo mode</h3>
+            <ul>
+              <li>Choose Play vs Computer to play X against a computer O player.</li>
+              <li>The computer chooses a legal move after a short thinking delay.</li>
             </ul>
           </section>
 

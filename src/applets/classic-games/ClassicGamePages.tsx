@@ -3,23 +3,33 @@ import { Pause, Play, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { BoardCoordinates, HighScorePanel, KeyboardHints, TutorialButton, type TutorialStep } from "../GameUi";
+import {
+  applyDomineeringMove,
+  applyHexMove,
+  applyKonaneMove,
+  canPlaceDomino,
+  computerThinkingDelayMs,
+  initialKonaneBoard,
+  legalKonaneJumps,
+  makeMatrix,
+  otherPlayer,
+  pointKey,
+  selectDomineeringComputerMove,
+  selectHexComputerMove,
+  selectKonaneComputerMove,
+  type CellOwner,
+  type DomineeringPlayer,
+  type GameMode,
+  type KonanePiece,
+  type OpponentDifficulty,
+  type PlayerMark,
+  type Point,
+} from "../boardGameOpponents";
 import { getHighScores, recordHighScore, type HighScoreEntry } from "../gameScoring";
 import { isSuperHexagonCollision, normalizeAngle, type SuperHexagonWall } from "./superHexagonMath";
 
-type PlayerMark = "A" | "B";
-type CellOwner = PlayerMark | null;
-type Point = { row: number; col: number };
-
 function themeClass(title: string): string {
   return `theme-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
-}
-
-function otherPlayer(player: PlayerMark): PlayerMark {
-  return player === "A" ? "B" : "A";
-}
-
-function pointKey(point: Point): string {
-  return `${point.row}:${point.col}`;
 }
 
 function parsePoint(key: string): Point {
@@ -62,6 +72,51 @@ function ResetButton({ onClick }: { onClick: () => void }) {
       <RotateCcw size={17} aria-hidden="true" />
       Reset
     </button>
+  );
+}
+
+function SoloModeControls({
+  difficulty,
+  gameMode,
+  onDifficultyChange,
+  onModeChange,
+}: {
+  difficulty: OpponentDifficulty;
+  gameMode: GameMode;
+  onDifficultyChange: (difficulty: OpponentDifficulty) => void;
+  onModeChange: (mode: GameMode) => void;
+}) {
+  return (
+    <section className="turn-card solo-mode-card" aria-label="Game mode">
+      <p className="eyebrow">Mode</p>
+      <div className="button-row">
+        <button
+          aria-pressed={gameMode === "twoPlayer"}
+          className={`secondary-button ${gameMode === "twoPlayer" ? "primary-action" : ""}`}
+          onClick={() => onModeChange("twoPlayer")}
+          type="button"
+        >
+          Two Player
+        </button>
+        <button
+          aria-pressed={gameMode === "computer"}
+          className={`secondary-button ${gameMode === "computer" ? "primary-action" : ""}`}
+          onClick={() => onModeChange("computer")}
+          type="button"
+        >
+          Play vs Computer
+        </button>
+      </div>
+      {gameMode === "computer" ? (
+        <label className="field">
+          <span>Difficulty</span>
+          <select value={difficulty} onChange={(event) => onDifficultyChange(event.target.value as OpponentDifficulty)}>
+            <option value="easy">Easy</option>
+            <option value="normal">Normal</option>
+          </select>
+        </label>
+      ) : null}
+    </section>
   );
 }
 
@@ -114,10 +169,6 @@ function RulesList({
   );
 }
 
-function makeMatrix<T>(size: number, value: T): T[][] {
-  return Array.from({ length: size }, () => Array.from({ length: size }, () => value));
-}
-
 function inBounds(point: Point, size: number): boolean {
   return point.row >= 0 && point.row < size && point.col >= 0 && point.col < size;
 }
@@ -131,84 +182,97 @@ function neighbors4(point: Point): Point[] {
   ];
 }
 
-function neighborsHex(point: Point, size: number): Point[] {
-  return [
-    { row: point.row - 1, col: point.col },
-    { row: point.row - 1, col: point.col + 1 },
-    { row: point.row, col: point.col - 1 },
-    { row: point.row, col: point.col + 1 },
-    { row: point.row + 1, col: point.col - 1 },
-    { row: point.row + 1, col: point.col },
-  ].filter((next) => inBounds(next, size));
-}
-
 export function HexPage() {
   const size = 7;
   const [board, setBoard] = useState<CellOwner[][]>(() => makeMatrix(size, null));
   const [currentPlayer, setCurrentPlayer] = useState<PlayerMark>("A");
   const [winner, setWinner] = useState<PlayerMark | null>(null);
-
-  function hasConnection(nextBoard: CellOwner[][], player: PlayerMark): boolean {
-    const queue: Point[] = [];
-    const seen = new Set<string>();
-
-    for (let index = 0; index < size; index += 1) {
-      const start = player === "A" ? { row: index, col: 0 } : { row: 0, col: index };
-      if (nextBoard[start.row][start.col] === player) {
-        queue.push(start);
-        seen.add(pointKey(start));
-      }
-    }
-
-    while (queue.length > 0) {
-      const point = queue.shift()!;
-      if ((player === "A" && point.col === size - 1) || (player === "B" && point.row === size - 1)) {
-        return true;
-      }
-
-      neighborsHex(point, size).forEach((next) => {
-        const key = pointKey(next);
-        if (!seen.has(key) && nextBoard[next.row][next.col] === player) {
-          seen.add(key);
-          queue.push(next);
-        }
-      });
-    }
-
-    return false;
-  }
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
+  const aiTurnRef = useRef(0);
+  const isComputerTurn = gameMode === "computer" && currentPlayer === "B" && !winner;
 
   function play(point: Point) {
-    if (winner || board[point.row][point.col]) {
+    if (winner || computerThinking || (gameMode === "computer" && currentPlayer === "B")) {
       return;
     }
 
-    const nextBoard = board.map((row) => [...row]);
-    nextBoard[point.row][point.col] = currentPlayer;
-    setBoard(nextBoard);
-
-    if (hasConnection(nextBoard, currentPlayer)) {
-      setWinner(currentPlayer);
+    const result = applyHexMove(board, currentPlayer, point);
+    if (!result) {
       return;
     }
 
+    setBoard(result.board);
+    setWinner(result.winner);
     setCurrentPlayer(otherPlayer(currentPlayer));
   }
 
   function reset() {
+    aiTurnRef.current += 1;
     setBoard(makeMatrix(size, null));
     setCurrentPlayer("A");
     setWinner(null);
+    setComputerThinking(false);
   }
+
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setBoard((currentBoard) => {
+        const move = selectHexComputerMove({ board: currentBoard, player: "B", difficulty });
+        if (!move) {
+          setWinner("A");
+          setComputerThinking(false);
+          return currentBoard;
+        }
+
+        const result = applyHexMove(currentBoard, "B", move);
+        if (!result) {
+          setComputerThinking(false);
+          return currentBoard;
+        }
+
+        setWinner(result.winner);
+        setCurrentPlayer("A");
+        setComputerThinking(false);
+        return result.board;
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, isComputerTurn]);
 
   return (
     <AppletPageShell title="Hex" subtitle="Connect your two sides before your opponent completes theirs.">
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
+          <SoloModeControls
+            difficulty={difficulty}
+            gameMode={gameMode}
+            onDifficultyChange={setDifficulty}
+            onModeChange={(mode) => {
+              aiTurnRef.current += 1;
+              setComputerThinking(false);
+              setGameMode(mode);
+            }}
+          />
           <StatusCard
-            message="Player A connects left to right. Player B connects top to bottom."
-            title={`Player ${currentPlayer} to place`}
+            message={`${gameMode === "computer" ? "Playing vs Computer. You control Player A; the computer controls Player B. " : ""}${computerThinking ? "Computer is thinking." : "Player A connects left to right. Player B connects top to bottom."}`}
+            title={computerThinking ? "Computer thinking" : `Player ${currentPlayer} to place`}
             winner={winner ? `Player ${winner}` : null}
           />
         </aside>
@@ -220,6 +284,7 @@ export function HexPage() {
                 <button
                   aria-label={`Hex ${rowIndex + 1}, ${colIndex + 1}`}
                   className={`hex-cell owner-${cell ?? "empty"}`}
+                  disabled={computerThinking || isComputerTurn}
                   key={`${rowIndex}:${colIndex}`}
                   onClick={() => play({ row: rowIndex, col: colIndex })}
                   type="button"
@@ -256,6 +321,13 @@ export function HexPage() {
                 "The first player with a complete path across their two edges wins.",
               ],
             },
+            {
+              title: "Solo mode",
+              items: [
+                "Choose Play vs Computer to play as Player A against a computer Player B.",
+                "Computer moves use legal empty cells only and appear after a short thinking delay.",
+              ],
+            },
           ]}
         />
       </section>
@@ -263,55 +335,97 @@ export function HexPage() {
   );
 }
 
-type DomineeringPlayer = "V" | "H";
-
 export function DomineeringPage() {
   const size = 6;
   const [board, setBoard] = useState<(DomineeringPlayer | null)[][]>(() => makeMatrix(size, null));
   const [currentPlayer, setCurrentPlayer] = useState<DomineeringPlayer>("V");
   const [winner, setWinner] = useState<DomineeringPlayer | null>(null);
-
-  function canPlace(nextBoard: (DomineeringPlayer | null)[][], player: DomineeringPlayer, point: Point): boolean {
-    const second = player === "V" ? { row: point.row + 1, col: point.col } : { row: point.row, col: point.col + 1 };
-    return inBounds(point, size) && inBounds(second, size) && !nextBoard[point.row][point.col] && !nextBoard[second.row][second.col];
-  }
-
-  function hasMove(nextBoard: (DomineeringPlayer | null)[][], player: DomineeringPlayer): boolean {
-    return nextBoard.some((row, rowIndex) =>
-      row.some((_, colIndex) => canPlace(nextBoard, player, { row: rowIndex, col: colIndex })),
-    );
-  }
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
+  const aiTurnRef = useRef(0);
+  const isComputerTurn = gameMode === "computer" && currentPlayer === "H" && !winner;
 
   function play(point: Point) {
-    if (winner || !canPlace(board, currentPlayer, point)) {
+    if (winner || computerThinking || isComputerTurn) {
       return;
     }
 
-    const nextBoard = board.map((row) => [...row]);
-    const second = currentPlayer === "V" ? { row: point.row + 1, col: point.col } : { row: point.row, col: point.col + 1 };
-    nextBoard[point.row][point.col] = currentPlayer;
-    nextBoard[second.row][second.col] = currentPlayer;
+    const result = applyDomineeringMove(board, currentPlayer, point);
+    if (!result) {
+      return;
+    }
 
-    const nextPlayer = currentPlayer === "V" ? "H" : "V";
-    setBoard(nextBoard);
-    setWinner(hasMove(nextBoard, nextPlayer) ? null : currentPlayer);
-    setCurrentPlayer(nextPlayer);
+    setBoard(result.board);
+    setWinner(result.winner);
+    setCurrentPlayer(result.nextPlayer);
   }
 
   function reset() {
+    aiTurnRef.current += 1;
     setBoard(makeMatrix(size, null));
     setCurrentPlayer("V");
     setWinner(null);
+    setComputerThinking(false);
   }
+
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setBoard((currentBoard) => {
+        const move = selectDomineeringComputerMove({ board: currentBoard, player: "H", difficulty });
+        if (!move) {
+          setWinner("V");
+          setComputerThinking(false);
+          return currentBoard;
+        }
+
+        const result = applyDomineeringMove(currentBoard, "H", move);
+        if (!result) {
+          setComputerThinking(false);
+          return currentBoard;
+        }
+
+        setWinner(result.winner);
+        setCurrentPlayer(result.nextPlayer);
+        setComputerThinking(false);
+        return result.board;
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, isComputerTurn]);
 
   return (
     <AppletPageShell title="Domineering" subtitle="Vertical dominoes versus horizontal dominoes on a shared board.">
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
+          <SoloModeControls
+            difficulty={difficulty}
+            gameMode={gameMode}
+            onDifficultyChange={setDifficulty}
+            onModeChange={(mode) => {
+              aiTurnRef.current += 1;
+              setComputerThinking(false);
+              setGameMode(mode);
+            }}
+          />
           <StatusCard
-            message="Click the top or left square for your domino. The next player loses if no placement remains."
-            title={`${currentPlayer === "V" ? "Vertical" : "Horizontal"} to place`}
+            message={`${gameMode === "computer" ? "Playing vs Computer. You control Vertical; the computer controls Horizontal. " : ""}${computerThinking ? "Computer is thinking." : "Click the top or left square for your domino. The next player loses if no placement remains."}`}
+            title={computerThinking ? "Computer thinking" : `${currentPlayer === "V" ? "Vertical" : "Horizontal"} to place`}
             winner={winner ? (winner === "V" ? "Vertical" : "Horizontal") : null}
           />
         </aside>
@@ -321,7 +435,8 @@ export function DomineeringPage() {
               row.map((cell, colIndex) => (
                 <button
                   aria-label={`Domineering square ${rowIndex + 1}, ${colIndex + 1}`}
-                  className={`mini-cell owner-${cell ?? "empty"} ${canPlace(board, currentPlayer, { row: rowIndex, col: colIndex }) ? "legal-target" : ""}`}
+                  className={`mini-cell owner-${cell ?? "empty"} ${canPlaceDomino(board, currentPlayer, { row: rowIndex, col: colIndex }) ? "legal-target" : ""}`}
+                  disabled={computerThinking || isComputerTurn}
                   key={`${rowIndex}:${colIndex}`}
                   onClick={() => play({ row: rowIndex, col: colIndex })}
                   type="button"
@@ -357,6 +472,13 @@ export function DomineeringPage() {
                 "Highlighted squares show legal starting positions for the current player.",
               ],
             },
+            {
+              title: "Solo mode",
+              items: [
+                "Choose Play vs Computer to play Vertical against a computer Horizontal player.",
+                "The computer waits briefly, then chooses a legal domino placement.",
+              ],
+            },
           ]}
         />
       </section>
@@ -364,73 +486,30 @@ export function DomineeringPage() {
   );
 }
 
-type KonanePiece = "B" | "W" | null;
-
-function initialKonaneBoard(): KonanePiece[][] {
-  const board = makeMatrix<KonanePiece>(6, null);
-  return board.map((row, rowIndex) =>
-    row.map((_, colIndex) => ((rowIndex + colIndex) % 2 === 0 ? "B" : "W")),
-  );
-}
-
 export function KonanePage() {
   const size = 6;
-  const [board, setBoard] = useState<KonanePiece[][]>(() => {
-    const initial = initialKonaneBoard();
-    initial[2][2] = null;
-    initial[3][3] = null;
-    return initial;
-  });
+  const [board, setBoard] = useState<KonanePiece[][]>(() => initialKonaneBoard());
   const [currentPlayer, setCurrentPlayer] = useState<"B" | "W">("B");
   const [selected, setSelected] = useState<Point | null>(null);
   const [winner, setWinner] = useState<"B" | "W" | null>(null);
-
-  function legalJumps(from: Point, nextBoard = board, player = currentPlayer): Point[] {
-    if (nextBoard[from.row][from.col] !== player) {
-      return [];
-    }
-
-    return [
-      { row: -2, col: 0 },
-      { row: 2, col: 0 },
-      { row: 0, col: -2 },
-      { row: 0, col: 2 },
-    ]
-      .map((delta) => ({ row: from.row + delta.row, col: from.col + delta.col }))
-      .filter((to) => {
-        const middle = { row: (from.row + to.row) / 2, col: (from.col + to.col) / 2 };
-        return (
-          inBounds(to, size) &&
-          nextBoard[to.row][to.col] === null &&
-          nextBoard[middle.row][middle.col] === (player === "B" ? "W" : "B")
-        );
-      });
-  }
-
-  function hasJump(nextBoard: KonanePiece[][], player: "B" | "W"): boolean {
-    return nextBoard.some((row, rowIndex) =>
-      row.some((cell, colIndex) => cell === player && legalJumps({ row: rowIndex, col: colIndex }, nextBoard, player).length > 0),
-    );
-  }
+  const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [computerThinking, setComputerThinking] = useState(false);
+  const aiTurnRef = useRef(0);
+  const isComputerTurn = gameMode === "computer" && currentPlayer === "W" && !winner;
 
   function play(point: Point) {
-    if (winner) {
+    if (winner || computerThinking || isComputerTurn) {
       return;
     }
 
     if (selected) {
-      const legal = legalJumps(selected).some((jump) => pointKey(jump) === pointKey(point));
-      if (legal) {
-        const nextBoard = board.map((row) => [...row]);
-        const middle = { row: (selected.row + point.row) / 2, col: (selected.col + point.col) / 2 };
-        nextBoard[point.row][point.col] = currentPlayer;
-        nextBoard[selected.row][selected.col] = null;
-        nextBoard[middle.row][middle.col] = null;
-        const nextPlayer = currentPlayer === "B" ? "W" : "B";
-        setBoard(nextBoard);
+      const result = applyKonaneMove(board, currentPlayer, { from: selected, to: point });
+      if (result) {
+        setBoard(result.board);
         setSelected(null);
-        setWinner(hasJump(nextBoard, nextPlayer) ? null : currentPlayer);
-        setCurrentPlayer(nextPlayer);
+        setWinner(result.winner);
+        setCurrentPlayer(result.nextPlayer);
         return;
       }
     }
@@ -439,25 +518,74 @@ export function KonanePage() {
   }
 
   function reset() {
-    const initial = initialKonaneBoard();
-    initial[2][2] = null;
-    initial[3][3] = null;
-    setBoard(initial);
+    aiTurnRef.current += 1;
+    setBoard(initialKonaneBoard());
     setCurrentPlayer("B");
     setSelected(null);
     setWinner(null);
+    setComputerThinking(false);
   }
 
-  const legalTargets = new Set(selected ? legalJumps(selected).map(pointKey) : []);
+  useEffect(() => {
+    if (!isComputerTurn) {
+      return;
+    }
+
+    const turnId = aiTurnRef.current + 1;
+    aiTurnRef.current = turnId;
+    setComputerThinking(true);
+    const timer = window.setTimeout(() => {
+      if (aiTurnRef.current !== turnId) {
+        return;
+      }
+
+      setBoard((currentBoard) => {
+        const move = selectKonaneComputerMove({ board: currentBoard, player: "W", difficulty });
+        if (!move) {
+          setWinner("B");
+          setComputerThinking(false);
+          return currentBoard;
+        }
+
+        const result = applyKonaneMove(currentBoard, "W", move);
+        if (!result) {
+          setComputerThinking(false);
+          return currentBoard;
+        }
+
+        setSelected(null);
+        setWinner(result.winner);
+        setCurrentPlayer(result.nextPlayer);
+        setComputerThinking(false);
+        return result.board;
+      });
+    }, computerThinkingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [difficulty, isComputerTurn]);
+
+  const legalTargets = new Set(selected ? legalKonaneJumps(board, selected, currentPlayer).map(pointKey) : []);
 
   return (
     <AppletPageShell title="Konane" subtitle="Jump captures on a compact Hawaiian checkers board.">
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
+          <SoloModeControls
+            difficulty={difficulty}
+            gameMode={gameMode}
+            onDifficultyChange={setDifficulty}
+            onModeChange={(mode) => {
+              aiTurnRef.current += 1;
+              setComputerThinking(false);
+              setGameMode(mode);
+            }}
+          />
           <StatusCard
-            message="Select one of your pieces, then jump over an adjacent enemy into an empty square."
-            title={`${currentPlayer === "B" ? "Black" : "White"} to jump`}
+            message={`${gameMode === "computer" ? "Playing vs Computer. You control Black; the computer controls White. " : ""}${computerThinking ? "Computer is thinking." : "Select one of your pieces, then jump over an adjacent enemy into an empty square."}`}
+            title={computerThinking ? "Computer thinking" : `${currentPlayer === "B" ? "Black" : "White"} to jump`}
             winner={winner ? (winner === "B" ? "Black" : "White") : null}
           />
         </aside>
@@ -470,6 +598,7 @@ export function KonanePage() {
                   <button
                     aria-label={`Konane square ${rowIndex + 1}, ${colIndex + 1}`}
                     className={`mini-cell konane ${cell ? `owner-${cell}` : "owner-empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`}
+                    disabled={computerThinking || isComputerTurn}
                     key={key}
                     onClick={() => play({ row: rowIndex, col: colIndex })}
                     type="button"
@@ -504,6 +633,13 @@ export function KonanePage() {
               items: [
                 "This version uses exactly one jump per turn.",
                 "Highlighted squares show the legal landing squares for the selected piece.",
+              ],
+            },
+            {
+              title: "Solo mode",
+              items: [
+                "Choose Play vs Computer to play Black against a computer White player.",
+                "The computer selects a legal capture after a short thinking delay.",
               ],
             },
           ]}
