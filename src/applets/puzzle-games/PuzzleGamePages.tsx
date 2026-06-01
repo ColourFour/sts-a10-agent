@@ -7,6 +7,8 @@ import {
   Undo2,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { HighScorePanel, KeyboardHints, TutorialButton, type TutorialStep } from "../GameUi";
+import { getHighScores, recordHighScore, type HighScoreEntry } from "../gameScoring";
 
 type Point = { row: number; col: number };
 type Direction = "up" | "down" | "left" | "right";
@@ -129,6 +131,24 @@ const lightsOutStart = [
   [false, true, false, true, false],
 ];
 
+const lightsOutTutorial: TutorialStep[] = [
+  {
+    title: "Toggle crosses",
+    text: "Click a light to flip it and its up, down, left, and right neighbors.",
+    highlight: "Lights",
+  },
+  {
+    title: "Clear the board",
+    text: "Solve by turning every light off. Fewer moves earn a higher local score.",
+    highlight: "Score",
+  },
+  {
+    title: "Replay anytime",
+    text: "Use Reset for the starting pattern. Escape closes this tutorial.",
+    highlight: "Reset",
+  },
+];
+
 function makeLightsOutStart(): boolean[][] {
   return cloneMatrix(lightsOutStart);
 }
@@ -140,7 +160,16 @@ function isLightsOutSolved(board: boolean[][]): boolean {
 export function LightsOutPage() {
   const [board, setBoard] = useState<boolean[][]>(() => makeLightsOutStart());
   const [moves, setMoves] = useState(0);
+  const [recorded, setRecorded] = useState(false);
+  const [highScores, setHighScores] = useState<HighScoreEntry[]>(() => getHighScores("lights-out"));
   const solved = isLightsOutSolved(board);
+
+  useEffect(() => {
+    if (solved && !recorded) {
+      setHighScores(recordHighScore({ gameId: "lights-out", score: Math.max(1, 1000 - moves), settings: `${moves} moves` }));
+      setRecorded(true);
+    }
+  }, [moves, recorded, solved]);
 
   function toggle(point: Point) {
     if (solved) {
@@ -166,6 +195,7 @@ export function LightsOutPage() {
   function reset() {
     setBoard(makeLightsOutStart());
     setMoves(0);
+    setRecorded(false);
   }
 
   return (
@@ -178,6 +208,9 @@ export function LightsOutPage() {
             message="Clicking a light flips that light plus its orthogonal neighbors."
             title={solved ? `Solved in ${moves} moves` : `${moves} moves`}
           />
+          <TutorialButton gameId="lights-out" steps={lightsOutTutorial} />
+          <KeyboardHints hints={["Tab: focus light", "Enter/Space: toggle", "Esc: close tutorial"]} />
+          <HighScorePanel entries={highScores} gameId="lights-out" />
         </aside>
         <section className="board-panel">
           <div className="square-board compact-board" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
@@ -250,7 +283,16 @@ function canSlide(board: SlidingTile[], index: number): boolean {
 export function SlidingTilesPage() {
   const [board, setBoard] = useState<SlidingTile[]>(() => [...slidingTilesStart]);
   const [moves, setMoves] = useState(0);
+  const [recorded, setRecorded] = useState(false);
+  const [highScores, setHighScores] = useState<HighScoreEntry[]>(() => getHighScores("sliding-tiles"));
   const solved = isSlidingSolved(board);
+
+  useEffect(() => {
+    if (solved && !recorded) {
+      setHighScores(recordHighScore({ gameId: "sliding-tiles", score: Math.max(1, 2000 - moves), settings: `${moves} moves` }));
+      setRecorded(true);
+    }
+  }, [moves, recorded, solved]);
 
   function slide(index: number) {
     if (solved || board[index] === null || !canSlide(board, index)) {
@@ -268,6 +310,7 @@ export function SlidingTilesPage() {
   function reset() {
     setBoard([...slidingTilesStart]);
     setMoves(0);
+    setRecorded(false);
   }
 
   return (
@@ -280,6 +323,7 @@ export function SlidingTilesPage() {
             message="Click a tile next to the blank space to slide it into that space."
             title={solved ? `Solved in ${moves} moves` : `${moves} moves`}
           />
+          <HighScorePanel entries={highScores} gameId="sliding-tiles" />
         </aside>
         <section className="board-panel">
           <div className="square-board compact-board" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
@@ -330,7 +374,16 @@ export function TowersOfHanoiPage() {
   const [selectedPeg, setSelectedPeg] = useState<number | null>(null);
   const [moves, setMoves] = useState(0);
   const [message, setMessage] = useState("Move the full stack to the right peg.");
+  const [recorded, setRecorded] = useState(false);
+  const [highScores, setHighScores] = useState<HighScoreEntry[]>(() => getHighScores("towers-of-hanoi"));
   const solved = pegs[2].length === hanoiDiskCount;
+
+  useEffect(() => {
+    if (solved && !recorded) {
+      setHighScores(recordHighScore({ gameId: "towers-of-hanoi", score: Math.max(1, 1000 - moves), settings: `${moves} moves` }));
+      setRecorded(true);
+    }
+  }, [moves, recorded, solved]);
 
   function clickPeg(index: number) {
     if (solved) {
@@ -374,6 +427,7 @@ export function TowersOfHanoiPage() {
     setSelectedPeg(null);
     setMoves(0);
     setMessage("Move the full stack to the right peg.");
+    setRecorded(false);
   }
 
   return (
@@ -386,6 +440,7 @@ export function TowersOfHanoiPage() {
             message={message}
             title={solved ? `Solved in ${moves} moves` : `${moves} moves`}
           />
+          <HighScorePanel entries={highScores} gameId="towers-of-hanoi" />
         </aside>
         <section className="board-panel">
           <div className="hanoi-board">
@@ -485,9 +540,19 @@ export function MastermindPage() {
   const [currentGuess, setCurrentGuess] = useState<(CodeColor | null)[]>([null, null, null, null]);
   const [activeColor, setActiveColor] = useState<CodeColor>("red");
   const [message, setMessage] = useState("Build a four-color guess, then submit it.");
+  const [recorded, setRecorded] = useState(false);
+  const [highScores, setHighScores] = useState<HighScoreEntry[]>(() => getHighScores("mastermind"));
   const solved = guesses.some((guess) => guess.exact === mastermindSecret.length);
   const outOfTurns = guesses.length >= mastermindLimit && !solved;
   const currentComplete = currentGuess.every((color) => color !== null);
+
+  useEffect(() => {
+    if ((solved || outOfTurns) && !recorded) {
+      const score = solved ? Math.max(1, 1000 - guesses.length * 80) : Math.max(1, guesses.length * 10);
+      setHighScores(recordHighScore({ gameId: "mastermind", score, settings: solved ? `${guesses.length} guesses` : "unsolved" }));
+      setRecorded(true);
+    }
+  }, [guesses.length, outOfTurns, recorded, solved]);
 
   function placeColor(index: number) {
     if (solved || outOfTurns) {
@@ -521,6 +586,7 @@ export function MastermindPage() {
     setCurrentGuess([null, null, null, null]);
     setActiveColor("red");
     setMessage("Build a four-color guess, then submit it.");
+    setRecorded(false);
   }
 
   const remaining = Math.max(0, mastermindLimit - guesses.length);
@@ -543,6 +609,7 @@ export function MastermindPage() {
           >
             Submit Guess
           </button>
+          <HighScorePanel entries={highScores} gameId="mastermind" />
         </aside>
         <section className="board-panel">
           <div className="mastermind-board">
@@ -673,10 +740,19 @@ export function PegSolitairePage() {
   const [board, setBoard] = useState<PegCell[][]>(() => initialPegSolitaireBoard());
   const [selected, setSelected] = useState<Point | null>(null);
   const [moves, setMoves] = useState(0);
+  const [recorded, setRecorded] = useState(false);
+  const [highScores, setHighScores] = useState<HighScoreEntry[]>(() => getHighScores("peg-solitaire"));
   const remainingPegs = pegCount(board);
   const solved = remainingPegs === 1;
   const stuck = !solved && !pegHasMove(board);
   const legalTargets = new Set(selected ? pegLegalTargets(board, selected).map(pointKey) : []);
+
+  useEffect(() => {
+    if ((solved || stuck) && !recorded) {
+      setHighScores(recordHighScore({ gameId: "peg-solitaire", score: Math.max(1, 1000 - remainingPegs * 50 - moves), settings: solved ? `${moves} moves` : `${remainingPegs} pegs` }));
+      setRecorded(true);
+    }
+  }, [moves, recorded, remainingPegs, solved, stuck]);
 
   function clickCell(point: Point) {
     const cell = board[point.row][point.col];
@@ -704,6 +780,7 @@ export function PegSolitairePage() {
     setBoard(initialPegSolitaireBoard());
     setSelected(null);
     setMoves(0);
+    setRecorded(false);
   }
 
   return (
@@ -716,6 +793,7 @@ export function PegSolitairePage() {
             message="Select a peg, then choose a highlighted landing hole two spaces away."
             title={`${remainingPegs} pegs - ${moves} moves`}
           />
+          <HighScorePanel entries={highScores} gameId="peg-solitaire" />
         </aside>
         <section className="board-panel">
           <div className="square-board compact-board peg-board" style={{ gridTemplateColumns: "repeat(7, 1fr)" }}>
@@ -813,7 +891,16 @@ function sokobanSolved(crates: Set<string>): boolean {
 
 export function SokobanMiniPage() {
   const [state, setState] = useState<SokobanState>(() => initialSokobanState());
+  const [recorded, setRecorded] = useState(false);
+  const [highScores, setHighScores] = useState<HighScoreEntry[]>(() => getHighScores("sokoban-mini"));
   const solved = useMemo(() => sokobanSolved(state.crates), [state.crates]);
+
+  useEffect(() => {
+    if (solved && !recorded) {
+      setHighScores(recordHighScore({ gameId: "sokoban-mini", score: Math.max(1, 1500 - state.moves), settings: `${state.moves} moves` }));
+      setRecorded(true);
+    }
+  }, [recorded, solved, state.moves]);
 
   function move(direction: Direction) {
     if (solved) {
@@ -856,7 +943,15 @@ export function SokobanMiniPage() {
         event.preventDefault();
         move("up");
       }
+      if (event.key === "w" || event.key === "W") {
+        event.preventDefault();
+        move("up");
+      }
       if (event.key === "ArrowDown") {
+        event.preventDefault();
+        move("down");
+      }
+      if (event.key === "s" || event.key === "S") {
         event.preventDefault();
         move("down");
       }
@@ -864,7 +959,15 @@ export function SokobanMiniPage() {
         event.preventDefault();
         move("left");
       }
+      if (event.key === "a" || event.key === "A") {
+        event.preventDefault();
+        move("left");
+      }
       if (event.key === "ArrowRight") {
+        event.preventDefault();
+        move("right");
+      }
+      if (event.key === "d" || event.key === "D") {
         event.preventDefault();
         move("right");
       }
@@ -876,6 +979,7 @@ export function SokobanMiniPage() {
 
   function reset() {
     setState(initialSokobanState());
+    setRecorded(false);
   }
 
   const directionButtons = [
@@ -892,9 +996,11 @@ export function SokobanMiniPage() {
           <ResetButton onClick={reset} />
           <PuzzleStatusCard
             label={solved ? "Solved" : "Puzzle"}
-            message="Use the arrow buttons or keyboard arrows. Crates can only be pushed, never pulled."
+            message="Use the arrow buttons, arrows, or WASD. Crates can only be pushed, never pulled."
             title={solved ? `Solved in ${state.moves} moves` : `${state.moves} moves`}
           />
+          <KeyboardHints hints={["Arrows/WASD: move", "Reset: restart"]} />
+          <HighScorePanel entries={highScores} gameId="sokoban-mini" />
           <div className="direction-pad" aria-label="Sokoban controls">
             <span />
             <button aria-label="Move up" onClick={() => move("up")} type="button">

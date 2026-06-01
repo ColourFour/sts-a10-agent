@@ -2,6 +2,8 @@ import { Chess, type Square as ChessSquare } from "chess.js";
 import { Pause, Play, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { BoardCoordinates, HighScorePanel, KeyboardHints, TutorialButton, type TutorialStep } from "../GameUi";
+import { getHighScores, recordHighScore, type HighScoreEntry } from "../gameScoring";
 import { isSuperHexagonCollision, normalizeAngle, type SuperHexagonWall } from "./superHexagonMath";
 
 type PlayerMark = "A" | "B";
@@ -1153,6 +1155,8 @@ export function MiniShogiPage() {
         <aside className="side-panel">
           <ResetButton onClick={reset} />
           <StatusCard message={message} title={`Player ${currentPlayer} to move`} winner={winner ? `Player ${winner}` : null} />
+          <TutorialButton gameId="mini-shogi" steps={miniShogiTutorial} />
+          <KeyboardHints hints={["Tab: focus square", "Enter/Space: select"]} />
           <div className="hand-pieces">
             {hands[currentPlayer].length === 0 ? <p className="empty-hand">No captured pieces</p> : hands[currentPlayer].map((kind, index) => (
               <button className={`hand-piece ${dropKind === kind ? "selected" : ""}`} key={`${kind}-${index}`} onClick={() => { setSelected(null); setDropKind(kind); setMessage(`${miniPieceNames[kind]} selected from hand. Drop it on a highlighted empty square.`); }} type="button">
@@ -1163,23 +1167,25 @@ export function MiniShogiPage() {
           </div>
         </aside>
         <section className="board-panel">
-          <div className="square-board shogi-board" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
-            {board.map((row, rowIndex) =>
-              row.map((cell, colIndex) => {
-                const key = `${rowIndex}:${colIndex}`;
-                return (
-                  <button aria-label={cell ? `${miniPieceNames[cell.kind]} for Player ${cell.owner}` : `Mini Shogi square ${rowIndex + 1}, ${colIndex + 1}`} className={`mini-cell owner-${cell?.owner ?? "empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`} key={key} onClick={() => moveOrDrop({ row: rowIndex, col: colIndex })} type="button">
-                    {cell ? (
-                      <span className={`shogi-token shogi-${cell.owner}`}>
-                        <span>{cell.kind}</span>
-                        <small>P{cell.owner}</small>
-                      </span>
-                    ) : ""}
-                  </button>
-                );
-              }),
-            )}
-          </div>
+          <BoardCoordinates cols={["A", "B", "C", "D", "E"]} rows={["1", "2", "3", "4", "5"]}>
+            <div className="square-board shogi-board" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+              {board.map((row, rowIndex) =>
+                row.map((cell, colIndex) => {
+                  const key = `${rowIndex}:${colIndex}`;
+                  return (
+                    <button aria-label={cell ? `${miniPieceNames[cell.kind]} for Player ${cell.owner}` : `Mini Shogi square ${rowIndex + 1}, ${colIndex + 1}`} className={`mini-cell owner-${cell?.owner ?? "empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`} key={key} onClick={() => moveOrDrop({ row: rowIndex, col: colIndex })} type="button">
+                      {cell ? (
+                        <span className={`shogi-token shogi-${cell.owner}`}>
+                          <span>{cell.kind}</span>
+                          <small>P{cell.owner}</small>
+                        </span>
+                      ) : ""}
+                    </button>
+                  );
+                }),
+              )}
+            </div>
+          </BoardCoordinates>
         </section>
         <RulesList
           intro="Mini Shogi is a compact capture-and-drop strategy game. This prototype uses King capture as the win condition."
@@ -1241,6 +1247,42 @@ const chessPieceGlyphs: Record<string, string> = {
   wn: "♘",
   wp: "♙",
 };
+
+const chessTutorial: TutorialStep[] = [
+  {
+    title: "Pick your piece",
+    text: "Select a piece for the side to move. Legal destinations glow immediately.",
+    highlight: "Board squares",
+  },
+  {
+    title: "Read the edges",
+    text: "Files and ranks stay visible around the board, so moves can be discussed as e4, Nf3, and so on.",
+    highlight: "Coordinates",
+  },
+  {
+    title: "Keyboard and reset",
+    text: "Tab through squares, press Enter or Space to activate, and use Reset for a fresh game.",
+    highlight: "Keys",
+  },
+];
+
+const miniShogiTutorial: TutorialStep[] = [
+  {
+    title: "Move or drop",
+    text: "Select a player token or a captured hand piece. Highlighted squares show legal moves or drops.",
+    highlight: "Tokens",
+  },
+  {
+    title: "Capture the King",
+    text: "Captured non-King pieces join your hand. Capturing the opposing King ends the game.",
+    highlight: "Hand",
+  },
+  {
+    title: "Use the board labels",
+    text: "The A-E and 1-5 coordinates make the compact board easier to scan.",
+    highlight: "Coordinates",
+  },
+];
 
 export function ChessPage() {
   const [game, setGame] = useState(() => new Chess());
@@ -1304,34 +1346,38 @@ export function ChessPage() {
         <aside className="side-panel">
           <ResetButton onClick={reset} />
           <StatusCard message={message} title={chessTitle} winner={chessWinner} />
+          <TutorialButton gameId="chess" steps={chessTutorial} />
+          <KeyboardHints hints={["Tab: focus square", "Enter/Space: move", "Esc: close tutorial"]} />
         </aside>
         <section className="board-panel">
-          <div className="square-board chess-board" style={{ gridTemplateColumns: "repeat(8, 1fr)" }}>
-            {rows.map((row, rowIndex) =>
-              row.map((piece, colIndex) => {
-                const square = `${chessFiles[colIndex]}${8 - rowIndex}` as ChessSquare;
-                return (
-                  <button
-                    aria-label={
-                      piece
-                        ? `${square}: ${piece.color === "w" ? "White" : "Black"} ${chessPieceNames[piece.type]}`
-                        : `${square}: empty`
-                    }
-                    className={`mini-cell chess-cell ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${selected === square ? "selected" : ""} ${legalTargets.has(square) ? "legal-target" : ""}`}
-                    key={square}
-                    onClick={() => clickSquare(square)}
-                    type="button"
-                  >
-                    {piece ? (
-                      <span className={`chess-piece-token chess-${piece.color}`}>
-                        {chessPieceGlyphs[`${piece.color}${piece.type}`]}
-                      </span>
-                    ) : ""}
-                  </button>
-                );
-              }),
-            )}
-          </div>
+          <BoardCoordinates cols={chessFiles} rows={["8", "7", "6", "5", "4", "3", "2", "1"]}>
+            <div className="square-board chess-board" style={{ gridTemplateColumns: "repeat(8, 1fr)" }}>
+              {rows.map((row, rowIndex) =>
+                row.map((piece, colIndex) => {
+                  const square = `${chessFiles[colIndex]}${8 - rowIndex}` as ChessSquare;
+                  return (
+                    <button
+                      aria-label={
+                        piece
+                          ? `${square}: ${piece.color === "w" ? "White" : "Black"} ${chessPieceNames[piece.type]}`
+                          : `${square}: empty`
+                      }
+                      className={`mini-cell chess-cell ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${selected === square ? "selected" : ""} ${legalTargets.has(square) ? "legal-target" : ""}`}
+                      key={square}
+                      onClick={() => clickSquare(square)}
+                      type="button"
+                    >
+                      {piece ? (
+                        <span className={`chess-piece-token chess-${piece.color}`}>
+                          {chessPieceGlyphs[`${piece.color}${piece.type}`]}
+                        </span>
+                      ) : ""}
+                    </button>
+                  );
+                }),
+              )}
+            </div>
+          </BoardCoordinates>
         </section>
         <RulesList
           intro="This applet plays standard chess with legal moves checked by chess.js. It is built for two people sharing the same screen."
@@ -1369,7 +1415,44 @@ export function SuperHexagonPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [running, setRunning] = useState(false);
   const [score, setScore] = useState(0);
-  const [best, setBest] = useState(0);
+  const [best, setBest] = useState(() => getHighScores("super-hexagon", 1)[0]?.score ?? 0);
+  const [highScores, setHighScores] = useState<HighScoreEntry[]>(() => getHighScores("super-hexagon"));
+  const [crash, setCrash] = useState<{ score: number; x: number; y: number } | null>(null);
+
+  function drawCrashMarker(scoreValue: number, x: number, y: number) {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) {
+      return;
+    }
+
+    ctx.save();
+    ctx.fillStyle = "rgba(17, 19, 22, 0.34)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#ff5f57";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(x, y, 21, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#ffefe0";
+    ctx.font = "800 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Collision", canvas.width / 2, canvas.height / 2 + 88);
+    ctx.fillText(`Final score ${scoreValue}`, canvas.width / 2, canvas.height / 2 + 114);
+    ctx.restore();
+  }
+
+  function startRun() {
+    setCrash(null);
+    setScore(0);
+    setRunning(true);
+  }
+
+  function resetRun() {
+    setRunning(false);
+    setCrash(null);
+    setScore(0);
+  }
 
   useEffect(() => {
     if (running) {
@@ -1382,6 +1465,11 @@ export function SuperHexagonPage() {
       return;
     }
 
+    if (crash) {
+      drawCrashMarker(crash.score, crash.x, crash.y);
+      return;
+    }
+
     ctx.fillStyle = "#16171a";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#f0c66f";
@@ -1390,8 +1478,25 @@ export function SuperHexagonPage() {
     ctx.fillText("SUPER HEXAGON", canvas.width / 2, canvas.height / 2 - 16);
     ctx.fillStyle = "#d8d0c2";
     ctx.font = "500 16px system-ui";
-    ctx.fillText("Press Start, then use arrows or A/D", canvas.width / 2, canvas.height / 2 + 18);
-  }, [best, running, score]);
+    ctx.fillText(score > 0 ? `Final score ${score}. Space to replay.` : "Press Space, then use arrows or A/D", canvas.width / 2, canvas.height / 2 + 18);
+  }, [best, crash, running, score]);
+
+  useEffect(() => {
+    function handleStartKey(event: KeyboardEvent) {
+      if (event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+      if (running) {
+        return;
+      }
+      startRun();
+    }
+
+    window.addEventListener("keydown", handleStartKey);
+    return () => window.removeEventListener("keydown", handleStartKey);
+  }, [running]);
 
   useEffect(() => {
     const keys = new Set<string>();
@@ -1420,8 +1525,8 @@ export function SuperHexagonPage() {
       last = now;
       elapsed += dt;
       spawn -= dt;
-      if (keys.has("ArrowLeft") || keys.has("a")) angle -= dt * 3.8;
-      if (keys.has("ArrowRight") || keys.has("d")) angle += dt * 3.8;
+      if (keys.has("ArrowLeft") || keys.has("a") || keys.has("A")) angle -= dt * 3.8;
+      if (keys.has("ArrowRight") || keys.has("d") || keys.has("D")) angle += dt * 3.8;
       if (spawn <= 0) {
         obstacles.push({ radius: 260, gap: Math.floor(Math.random() * 6), rotation: Math.random() * Math.PI * 2 });
         spawn = Math.max(0.55, 1.25 - elapsed * 0.025);
@@ -1431,8 +1536,19 @@ export function SuperHexagonPage() {
       const playerAngle = normalizeAngle(angle - Math.PI / 2);
       const hit = isSuperHexagonCollision({ playerAngle, walls: obstacles });
       if (hit) {
-        setBest((value) => Math.max(value, Math.floor(elapsed * 10)));
-        setScore(Math.floor(elapsed * 10));
+        const finalScore = Math.floor(elapsed * 10);
+        const w = canvas.width;
+        const h = canvas.height;
+        const impact = {
+          score: finalScore,
+          x: w / 2 + Math.cos(playerAngle - Math.PI / 2) * 54,
+          y: h / 2 + Math.sin(playerAngle - Math.PI / 2) * 54,
+        };
+        setBest((value) => Math.max(value, finalScore));
+        setHighScores(recordHighScore({ gameId: "super-hexagon", score: finalScore, settings: "standard" }));
+        setScore(finalScore);
+        setCrash(impact);
+        window.setTimeout(() => setCrash(null), 900);
         setRunning(false);
         return;
       }
@@ -1494,18 +1610,27 @@ export function SuperHexagonPage() {
       <section className="mini-game-layout">
         <aside className="side-panel">
           <button className="secondary-button primary-action wide" onClick={() => {
-            setRunning((value) => {
-              if (!value) {
-                setScore(0);
-              }
-              return !value;
-            });
+            if (running) {
+              setRunning(false);
+            } else {
+              startRun();
+            }
           }} type="button">
             {running ? <Pause size={17} aria-hidden="true" /> : <Play size={17} aria-hidden="true" />}
             {running ? "Pause" : "Start"}
           </button>
-          <ResetButton onClick={() => { setRunning(false); setScore(0); }} />
-          <StatusCard message="Use Left/Right arrows or A/D. Avoid incoming walls unless you are aligned with the gap." title={`Score ${score} / Best ${best}`} />
+          <ResetButton onClick={resetRun} />
+          <StatusCard message="Use Left/Right arrows or A/D. Space starts or replays after a crash." title={`Score ${score} / Best ${best}`} />
+          <TutorialButton
+            gameId="super-hexagon"
+            steps={[
+              { title: "Start the run", text: "Press Space or Start. The timer becomes your score.", highlight: "Start" },
+              { title: "Rotate to gaps", text: "Use ArrowLeft/ArrowRight or A/D to line the triangle up with open wall gaps.", highlight: "Controls" },
+              { title: "Inspect crashes", text: "On collision, the playfield freezes briefly and marks the contact point before replay.", highlight: "Collision marker" },
+            ]}
+          />
+          <KeyboardHints hints={["Space: start/replay", "A/D or arrows: rotate", "Esc: close tutorial"]} />
+          <HighScorePanel entries={highScores} gameId="super-hexagon" />
         </aside>
         <section className="board-panel super-panel">
           <canvas className="super-canvas" height={520} ref={canvasRef} width={520} />

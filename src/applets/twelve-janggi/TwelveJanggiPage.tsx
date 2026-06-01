@@ -1,5 +1,6 @@
 import { RotateCcw, Undo2 } from "lucide-react";
 import { useState } from "react";
+import { KeyboardHints, TutorialButton, type TutorialStep } from "../GameUi";
 import {
   applyDrop,
   applyMove,
@@ -20,6 +21,24 @@ import {
 type HandCounts = Partial<Record<PieceKind, number>>;
 
 const handOrder: PieceKind[] = ["general", "minister", "man", "feudalLord"];
+
+const twelveJanggiTutorial: TutorialStep[] = [
+  {
+    title: "Select a token",
+    text: "Choose one of the current player's pieces. Legal move targets glow on the board.",
+    highlight: "Board",
+  },
+  {
+    title: "Captured pieces return",
+    text: "Captured pieces move to your hand and can be dropped on a later turn.",
+    highlight: "Hands",
+  },
+  {
+    title: "Watch territory",
+    text: "A King entering the far territory creates a threat. Capture it immediately or it wins next turn.",
+    highlight: "Territory",
+  },
+];
 
 function countHandPieces(pieces: PieceKind[]): HandCounts {
   return pieces.reduce<HandCounts>((counts, kind) => {
@@ -258,6 +277,8 @@ export function TwelveJanggiPage() {
             ) : null}
           </div>
 
+          <TutorialButton gameId="twelve-janggi" steps={twelveJanggiTutorial} />
+          <KeyboardHints hints={["Tab: focus square", "Enter/Space: select", "Esc: close tutorial"]} />
           <HandPanel player="A" state={state} onSelect={handleHandSelect} />
           <HandPanel player="B" state={state} onSelect={handleHandSelect} />
         </aside>

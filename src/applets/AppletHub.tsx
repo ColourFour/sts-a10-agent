@@ -1,5 +1,6 @@
 import { ArrowRight, Gamepad2, Sparkles, Swords, Trophy } from "lucide-react";
 import { appletsRegistry, type AppletRegistryEntry } from "./appletsRegistry";
+import { getHighScores } from "./gameScoring";
 
 const visualCellCount = 12;
 const featuredIds = new Set(["twelve-janggi", "super-hexagon", "lights-out"]);
@@ -43,6 +44,8 @@ function AppletCard({
   featured?: boolean;
   index: number;
 }) {
+  const best = getHighScores(applet.id, 1)[0];
+
   return (
     <a
       className={`applet-card applet-card-${applet.id} ${featured ? "featured-card" : ""}`}
@@ -60,6 +63,12 @@ function AppletCard({
           <span key={tag}>{tag}</span>
         ))}
       </div>
+      {best ? (
+        <div className="score-callout">
+          <Trophy size={15} aria-hidden="true" />
+          Local best {best.score}
+        </div>
+      ) : null}
       <span className="primary-link">
         Launch
         <ArrowRight size={18} aria-hidden="true" />
