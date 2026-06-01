@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import { AppletHub } from "./applets/AppletHub";
 import {
+  BlockStackPage,
+  BrickBreakerPage,
+  NeonSnakePage,
+  PaddlePopPage,
+  SectorInvadersPage,
+  StarDriftPage,
+  WallPongPage,
+  WingDashPage,
+} from "./applets/arcade-games/ArcadeGamePages";
+import {
   AmazonsMiniPage,
   ChessPage,
   DomineeringPage,
@@ -78,6 +88,38 @@ export function App() {
 
   if (route === "/applets/super-hexagon") {
     return <SuperHexagonPage />;
+  }
+
+  if (route === "/applets/block-stack") {
+    return <BlockStackPage />;
+  }
+
+  if (route === "/applets/wing-dash") {
+    return <WingDashPage />;
+  }
+
+  if (route === "/applets/neon-snake") {
+    return <NeonSnakePage />;
+  }
+
+  if (route === "/applets/brick-breaker") {
+    return <BrickBreakerPage />;
+  }
+
+  if (route === "/applets/star-drift") {
+    return <StarDriftPage />;
+  }
+
+  if (route === "/applets/sector-invaders") {
+    return <SectorInvadersPage />;
+  }
+
+  if (route === "/applets/paddle-pop") {
+    return <PaddlePopPage />;
+  }
+
+  if (route === "/applets/wall-pong") {
+    return <WallPongPage />;
   }
 
   if (route === "/applets/lights-out") {

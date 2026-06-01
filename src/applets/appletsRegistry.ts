@@ -101,6 +101,78 @@ export const appletsRegistry: AppletRegistryEntry[] = [
     tags: ["Arcade", "Single-player", "Canvas"],
   },
   {
+    id: "block-stack",
+    title: "Block Stack",
+    description:
+      "Rotate falling blocks, clear rows, and keep the neon well from overflowing.",
+    route: "/applets/block-stack",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Keyboard", "Score Attack"],
+  },
+  {
+    id: "wing-dash",
+    title: "Wing Dash",
+    description:
+      "Tap through moving gates in a fast timing run built for quick replays.",
+    route: "/applets/wing-dash",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Reflex", "Single-player"],
+  },
+  {
+    id: "neon-snake",
+    title: "Neon Snake",
+    description:
+      "Steer a growing light trail through sparks without hitting walls or yourself.",
+    route: "/applets/neon-snake",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Keyboard", "Score Attack"],
+  },
+  {
+    id: "brick-breaker",
+    title: "Brick Breaker",
+    description:
+      "Bounce a glowing ball through brick rows before it slips past the paddle.",
+    route: "/applets/brick-breaker",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Reflex", "Single-player"],
+  },
+  {
+    id: "star-drift",
+    title: "Star Drift",
+    description:
+      "Thrust through a drifting rock field and shoot hazards before they hit your ship.",
+    route: "/applets/star-drift",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Shooter", "Keyboard"],
+  },
+  {
+    id: "sector-invaders",
+    title: "Sector Invaders",
+    description:
+      "Defend the lower line from marching invader rows with a quick-firing cannon.",
+    route: "/applets/sector-invaders",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Shooter", "Score Attack"],
+  },
+  {
+    id: "paddle-pop",
+    title: "Paddle Pop",
+    description:
+      "Catch the rebound and pop floating targets in a fast paddle score run.",
+    route: "/applets/paddle-pop",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Paddle", "Reflex"],
+  },
+  {
+    id: "wall-pong",
+    title: "Wall Pong",
+    description:
+      "Play a solo paddle rally against the far wall and chase a longer return streak.",
+    route: "/applets/wall-pong",
+    status: "Playable Prototype",
+    tags: ["Arcade", "Paddle", "Single-player"],
+  },
+  {
     id: "lights-out",
     title: "Lights Out",
     description:

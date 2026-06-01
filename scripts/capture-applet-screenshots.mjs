@@ -31,6 +31,14 @@ const pages = [
   ["konane", "Konane", "#/applets/konane"],
   ["chess", "Chess", "#/applets/chess"],
   ["super-hexagon", "Super Hexagon", "#/applets/super-hexagon"],
+  ["block-stack", "Block Stack", "#/applets/block-stack"],
+  ["wing-dash", "Wing Dash", "#/applets/wing-dash"],
+  ["neon-snake", "Neon Snake", "#/applets/neon-snake"],
+  ["brick-breaker", "Brick Breaker", "#/applets/brick-breaker"],
+  ["star-drift", "Star Drift", "#/applets/star-drift"],
+  ["sector-invaders", "Sector Invaders", "#/applets/sector-invaders"],
+  ["paddle-pop", "Paddle Pop", "#/applets/paddle-pop"],
+  ["wall-pong", "Wall Pong", "#/applets/wall-pong"],
   ["lights-out", "Lights Out", "#/applets/lights-out"],
   ["sliding-tiles", "Sliding Tiles", "#/applets/sliding-tiles"],
   ["towers-of-hanoi", "Towers of Hanoi", "#/applets/towers-of-hanoi"],
@@ -110,7 +118,7 @@ async function main() {
       }, title);
 
       const isHub = slug === "hub";
-      if (!result.ok || !result.cssLoaded || (isHub ? result.cards < 16 : !result.playArea || result.controls < 2)) {
+      if (!result.ok || !result.cssLoaded || (isHub ? result.cards < 24 : !result.playArea || result.controls < 2)) {
         failures.push(`${slug} did not render usable content: ${JSON.stringify(result)}`);
       }
 

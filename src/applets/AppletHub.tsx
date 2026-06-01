@@ -3,9 +3,24 @@ import { appletsRegistry, type AppletRegistryEntry } from "./appletsRegistry";
 import { getHighScores } from "./gameScoring";
 
 const visualCellCount = 12;
-const featuredIds = new Set(["twelve-janggi", "super-hexagon", "lights-out"]);
+const featuredIds = new Set(["star-drift", "sector-invaders", "paddle-pop", "wall-pong"]);
 
 const sections = [
+  {
+    title: "Arcade cabinet",
+    description: "Fast keyboard play, score attacks, shooters, paddle games, and instant replays.",
+    ids: [
+      "super-hexagon",
+      "block-stack",
+      "wing-dash",
+      "neon-snake",
+      "brick-breaker",
+      "star-drift",
+      "sector-invaders",
+      "paddle-pop",
+      "wall-pong",
+    ],
+  },
   {
     title: "Strategy tables",
     description: "Two-player boards with territory, tactics, captures, or connection races.",
@@ -15,11 +30,6 @@ const sections = [
     title: "Puzzle benches",
     description: "Solo problems with crisp goals, compact boards, and resettable challenge paths.",
     ids: ["xo-game-lab", "lights-out", "sliding-tiles", "towers-of-hanoi", "mastermind", "peg-solitaire", "sokoban-mini"],
-  },
-  {
-    title: "Arcade cabinet",
-    description: "Fast keyboard play and canvas action.",
-    ids: ["super-hexagon"],
   },
 ];
 
@@ -101,7 +111,7 @@ export function AppletHub() {
             </span>
             <span>
               <Trophy size={17} aria-hidden="true" />
-              Completion-tested builds
+              9 arcade score runs
             </span>
           </div>
         </div>
