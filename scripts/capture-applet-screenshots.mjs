@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
 
 const distDir = join(process.cwd(), "dist");
-const outputDir = join(process.cwd(), "qa", "app-screen-checks", "2026-06-01");
+const outputDir = join(process.cwd(), "qa", "app-screen-checks", "2026-06-01-art-pass");
 const chromeExecutable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const basePath = "/sts-a10-agent/";
 const port = 5176;
@@ -94,6 +94,7 @@ async function main() {
   const browser = await chromium.launch({ executablePath: chromeExecutable });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
   const failures = [];
+  let screenshotCount = 0;
 
   page.on("pageerror", (error) => failures.push(error.message));
   page.on("console", (message) => {
@@ -126,6 +127,17 @@ async function main() {
         fullPage: true,
         path: join(outputDir, `${slug}.png`),
       });
+      screenshotCount += 1;
+
+      if (slug === "star-drift") {
+        await page.keyboard.press("Space");
+        await page.waitForTimeout(2200);
+        await page.screenshot({
+          fullPage: true,
+          path: join(outputDir, "star-drift-gameplay.png"),
+        });
+        screenshotCount += 1;
+      }
     }
   } finally {
     await browser.close();
@@ -136,7 +148,7 @@ async function main() {
     throw new Error(`Screenshot QA failed:\n${failures.join("\n")}`);
   }
 
-  console.log(`Saved ${pages.length} built-site screenshots to ${outputDir}`);
+  console.log(`Saved ${screenshotCount} built-site screenshots to ${outputDir}`);
 }
 
 main().catch((error) => {

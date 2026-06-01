@@ -156,9 +156,13 @@ function useArcadeKeys(onSpace: () => void) {
 }
 
 function drawCabinet(ctx: CanvasRenderingContext2D, width: number, height: number) {
-  ctx.fillStyle = "#101318";
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, "#07111d");
+  gradient.addColorStop(0.52, "#101028");
+  gradient.addColorStop(1, "#220f2a");
+  ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
-  ctx.strokeStyle = "rgba(240,198,111,0.18)";
+  ctx.strokeStyle = "rgba(24,240,255,0.16)";
   ctx.lineWidth = 2;
   for (let x = 0; x < width; x += 40) {
     ctx.beginPath();
@@ -170,6 +174,13 @@ function drawCabinet(ctx: CanvasRenderingContext2D, width: number, height: numbe
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,79,216,0.12)";
+  for (let x = -height; x < width; x += 56) {
+    ctx.beginPath();
+    ctx.moveTo(x, height);
+    ctx.lineTo(x + height, 0);
     ctx.stroke();
   }
 }
@@ -895,11 +906,16 @@ export function StarDriftPage() {
         });
       }
       drawCabinet(ctx, canvas.width, canvas.height);
-      ctx.fillStyle = "#f0c66f";
       rocksRef.current.forEach((rock) => {
+        const rockGradient = ctx.createRadialGradient(rock.x - rock.r * 0.35, rock.y - rock.r * 0.35, 2, rock.x, rock.y, rock.r);
+        rockGradient.addColorStop(0, "#ffe45e");
+        rockGradient.addColorStop(0.58, "#ff8a3d");
+        rockGradient.addColorStop(1, "#5d2a20");
         ctx.beginPath();
         ctx.arc(rock.x, rock.y, rock.r, 0, Math.PI * 2);
-        ctx.strokeStyle = "#f0c66f";
+        ctx.fillStyle = rockGradient;
+        ctx.fill();
+        ctx.strokeStyle = "#ffe45e";
         ctx.lineWidth = 3;
         ctx.stroke();
       });
@@ -918,8 +934,19 @@ export function StarDriftPage() {
       ctx.lineTo(-12, 14);
       ctx.lineTo(12, 14);
       ctx.closePath();
-      ctx.fillStyle = "#4f8ed8";
+      ctx.fillStyle = "#18f0ff";
       ctx.fill();
+      ctx.strokeStyle = "#fff7e8";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (keysRef.current.up && phaseRef.current === "running") {
+        ctx.beginPath();
+        ctx.moveTo(-7, 15);
+        ctx.lineTo(0, 31);
+        ctx.lineTo(7, 15);
+        ctx.fillStyle = "#ff4fd8";
+        ctx.fill();
+      }
       ctx.restore();
       animation = requestAnimationFrame(frame);
     }

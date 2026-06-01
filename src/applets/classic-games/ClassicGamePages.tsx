@@ -1165,6 +1165,19 @@ const miniPieceNames: Record<MiniKind, string> = {
   "+P": "Promoted Pawn",
 };
 
+const miniPieceGlyphs: Record<MiniKind, string> = {
+  K: "王",
+  G: "金",
+  S: "銀",
+  B: "角",
+  R: "飛",
+  P: "歩",
+  "+S": "全",
+  "+B": "馬",
+  "+R": "龍",
+  "+P": "と",
+};
+
 function initialMiniShogiBoard(): MiniBoard {
   const board = makeMatrix<MiniPiece | null>(5, null);
   board[0] = ["R", "B", "S", "G", "K"].map((kind) => ({ owner: "B", kind: kind as MiniKind }));
@@ -1464,7 +1477,7 @@ export function MiniShogiPage() {
                     <button aria-label={cell ? `${miniPieceNames[cell.kind]} for Player ${cell.owner}` : `Mini Shogi square ${rowIndex + 1}, ${colIndex + 1}`} className={`mini-cell owner-${cell?.owner ?? "empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`} disabled={computerThinking || isComputerTurn} key={key} onClick={() => moveOrDrop({ row: rowIndex, col: colIndex })} type="button">
                       {cell ? (
                         <span className={`shogi-token shogi-${cell.owner}`}>
-                          <span>{cell.kind}</span>
+                          <span>{miniPieceGlyphs[cell.kind]}</span>
                           <small>P{cell.owner}</small>
                         </span>
                       ) : ""}

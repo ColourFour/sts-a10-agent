@@ -1,22 +1,23 @@
 :root {
-  --bg: #111316;
-  --bg-warm: #211c19;
-  --surface: rgba(25, 28, 32, 0.9);
-  --surface-strong: rgba(32, 35, 40, 0.96);
-  --surface-soft: rgba(255, 255, 255, 0.06);
-  --border: rgba(232, 220, 200, 0.18);
-  --border-strong: rgba(242, 204, 124, 0.5);
-  --text: #fff7e8;
-  --muted: #d8d0c2;
-  --subtle: #aaa39a;
-  --gold: #f0c66f;
-  --gold-dark: #9b6e2f;
-  --red: #b33d36;
-  --red-strong: #d65449;
-  --blue: #2f67a6;
-  --blue-strong: #4f8ed8;
-  --green: #2f7d51;
-  --purple: #7356ad;
+  --bg: #070b14;
+  --bg-warm: #24151b;
+  --surface: rgba(16, 21, 31, 0.92);
+  --surface-strong: rgba(20, 26, 38, 0.98);
+  --surface-soft: rgba(255, 255, 255, 0.075);
+  --border: rgba(255, 235, 200, 0.22);
+  --border-strong: rgba(255, 228, 94, 0.58);
+  --text: #fffaf0;
+  --muted: #e7decf;
+  --subtle: #b9b1a6;
+  --gold: #ffe45e;
+  --gold-dark: #c87524;
+  --red: #f24e43;
+  --red-strong: #ff6a5f;
+  --blue: #168cff;
+  --blue-strong: #18f0ff;
+  --green: #28d979;
+  --purple: #b967ff;
+  --magenta: #ff4fd8;
   --shadow: 0 20px 58px rgba(0, 0, 0, 0.34);
   color: var(--text);
   background: var(--bg);
@@ -42,7 +43,7 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
-    linear-gradient(135deg, rgba(38, 30, 25, 0.95) 0%, rgba(17, 19, 22, 0.98) 44%, rgba(18, 25, 35, 1) 100%),
+    linear-gradient(135deg, rgba(8, 13, 25, 0.98) 0%, rgba(27, 14, 33, 0.98) 46%, rgba(7, 18, 30, 1) 100%),
     repeating-linear-gradient(
       90deg,
       rgba(255, 255, 255, 0.025) 0,
@@ -57,8 +58,8 @@ body::before {
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(180deg, rgba(240, 198, 111, 0.08), transparent 34%),
-    linear-gradient(90deg, rgba(47, 103, 166, 0.08), transparent 48%, rgba(179, 61, 54, 0.07));
+    linear-gradient(180deg, rgba(255, 228, 94, 0.1), transparent 34%),
+    linear-gradient(90deg, rgba(24, 240, 255, 0.11), transparent 48%, rgba(255, 79, 216, 0.1));
   content: "";
   pointer-events: none;
 }
@@ -1810,6 +1811,278 @@ h3 {
   background: var(--blue);
 }
 
+/* Task 6/1 art pass: brighter, more object-like game boards and pieces. */
+.janggi-board {
+  border-color: #5c321d;
+  background:
+    linear-gradient(135deg, rgba(255, 242, 197, 0.18), transparent 42%),
+    linear-gradient(90deg, transparent calc(33.33% - 1px), rgba(67, 35, 17, 0.62) calc(33.33% - 1px) calc(33.33% + 1px), transparent calc(33.33% + 1px)),
+    linear-gradient(90deg, transparent calc(66.66% - 1px), rgba(67, 35, 17, 0.62) calc(66.66% - 1px) calc(66.66% + 1px), transparent calc(66.66% + 1px)),
+    linear-gradient(180deg, transparent calc(25% - 1px), rgba(67, 35, 17, 0.62) calc(25% - 1px) calc(25% + 1px), transparent calc(25% + 1px)),
+    linear-gradient(180deg, transparent calc(50% - 1px), rgba(67, 35, 17, 0.62) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)),
+    linear-gradient(180deg, transparent calc(75% - 1px), rgba(67, 35, 17, 0.62) calc(75% - 1px) calc(75% + 1px), transparent calc(75% + 1px)),
+    #d99b5b;
+  box-shadow:
+    inset 0 0 0 5px rgba(255, 235, 177, 0.18),
+    0 20px 52px rgba(37, 18, 7, 0.36);
+}
+
+.janggi-square {
+  border-color: rgba(84, 43, 18, 0.34);
+  background: rgba(235, 178, 104, 0.5);
+}
+
+.janggi-square.empty {
+  background: rgba(201, 132, 68, 0.45);
+}
+
+.piece-token {
+  width: min(76px, 84%);
+  border: 3px solid #fff4d6;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.26), transparent 24%),
+    #f24e43;
+  box-shadow:
+    0 9px 0 rgba(72, 35, 16, 0.22),
+    0 18px 26px rgba(54, 24, 9, 0.26);
+}
+
+.owned-A .piece-token {
+  color: #fffaf0;
+  background:
+    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.24), transparent 24%),
+    #d83128;
+}
+
+.owned-B .piece-token {
+  color: #fffaf0;
+  background:
+    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.24), transparent 24%),
+    #126de0;
+}
+
+.piece-kind {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.65rem, 4vw, 2.28rem);
+}
+
+.piece-owner {
+  color: rgba(255, 250, 240, 0.88);
+  font-size: 0.62rem;
+}
+
+.square-board {
+  border: 3px solid rgba(255, 230, 172, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 42%),
+    #0a0f18;
+}
+
+.mini-cell {
+  border-color: rgba(255, 250, 240, 0.2);
+  font-size: clamp(1rem, 3vw, 1.35rem);
+}
+
+.mini-cell.owner-A,
+.mini-cell.owner-V {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent),
+    #f24e43;
+}
+
+.mini-cell.owner-B,
+.mini-cell.owner-H {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent),
+    #168cff;
+}
+
+.mini-cell.owner-X {
+  color: #10131a;
+  background: repeating-linear-gradient(45deg, #24202a 0 8px, #3c243a 8px 16px);
+}
+
+.konane.owner-W,
+.mini-cell.owner-W {
+  color: #15171d;
+  background:
+    radial-gradient(circle at 35% 28%, #fff, #e9ded0 65%, #bcae9d);
+}
+
+.mini-cell.konane.owner-B {
+  color: #fffaf0;
+  background:
+    radial-gradient(circle at 35% 28%, #5a5f6a, #17191f 60%, #030407);
+}
+
+.mini-cell.konane.owner-B,
+.mini-cell.konane.owner-W {
+  color: transparent;
+}
+
+.mini-cell.konane.owner-B::after,
+.mini-cell.konane.owner-W::after,
+.morris-point.owner-A::after,
+.morris-point.owner-B::after {
+  width: 62%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  content: "";
+  box-shadow:
+    inset 0 4px 8px rgba(255, 255, 255, 0.24),
+    inset 0 -8px 14px rgba(0, 0, 0, 0.26),
+    0 8px 16px rgba(0, 0, 0, 0.28);
+}
+
+.mini-cell.konane.owner-B::after,
+.morris-point.owner-B::after {
+  background: #111217;
+}
+
+.mini-cell.konane.owner-W::after,
+.morris-point.owner-A::after {
+  background: #fff3df;
+}
+
+.hex-board {
+  border: 2px solid rgba(255, 228, 94, 0.2);
+  background:
+    linear-gradient(90deg, rgba(242, 78, 67, 0.34), transparent 20%, transparent 80%, rgba(242, 78, 67, 0.34)),
+    linear-gradient(180deg, rgba(24, 140, 255, 0.34), transparent 20%, transparent 80%, rgba(24, 140, 255, 0.34)),
+    #07111d;
+}
+
+.hex-cell {
+  border-color: rgba(255, 250, 240, 0.22);
+  background: #162436;
+}
+
+.hex-cell.owner-A {
+  background: #ff5d52;
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.16);
+}
+
+.hex-cell.owner-B {
+  background: #18b9ff;
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.16);
+}
+
+.morris-board {
+  gap: 0;
+  padding: 18px;
+  border-color: rgba(255, 228, 94, 0.7);
+  background:
+    linear-gradient(90deg, transparent 13%, rgba(255, 228, 94, 0.52) 13.6%, rgba(255, 228, 94, 0.52) 14.4%, transparent 15%),
+    linear-gradient(90deg, transparent 47%, rgba(255, 228, 94, 0.62) 47.7%, rgba(255, 228, 94, 0.62) 52.3%, transparent 53%),
+    linear-gradient(90deg, transparent 85%, rgba(255, 228, 94, 0.52) 85.6%, rgba(255, 228, 94, 0.52) 86.4%, transparent 87%),
+    linear-gradient(0deg, transparent 13%, rgba(255, 228, 94, 0.52) 13.6%, rgba(255, 228, 94, 0.52) 14.4%, transparent 15%),
+    linear-gradient(0deg, transparent 47%, rgba(255, 228, 94, 0.62) 47.7%, rgba(255, 228, 94, 0.62) 52.3%, transparent 53%),
+    linear-gradient(0deg, transparent 85%, rgba(255, 228, 94, 0.52) 85.6%, rgba(255, 228, 94, 0.52) 86.4%, transparent 87%),
+    radial-gradient(circle at 50% 50%, rgba(24, 240, 255, 0.12), transparent 54%),
+    #101817;
+}
+
+.morris-point {
+  width: 74%;
+  align-self: center;
+  justify-self: center;
+  border: 2px solid rgba(255, 250, 240, 0.28);
+  background: #182231;
+  color: transparent;
+}
+
+.morris-point.owner-A,
+.morris-point.owner-B {
+  background: transparent;
+}
+
+.shogi-board {
+  padding: 10px;
+  border-color: #7c4b24;
+  background:
+    linear-gradient(90deg, rgba(92, 50, 25, 0.35) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(92, 50, 25, 0.35) 1px, transparent 1px),
+    #dba35d;
+  background-size: 20% 20%;
+}
+
+.shogi-board .mini-cell {
+  background: rgba(255, 213, 143, 0.62);
+}
+
+.shogi-token {
+  width: min(78%, 62px);
+  aspect-ratio: 0.82;
+  border: 2px solid #6b3f1f;
+  border-radius: 8px 8px 13px 13px;
+  clip-path: polygon(50% 0, 94% 18%, 82% 100%, 18% 100%, 6% 18%);
+  color: #26150b;
+  background:
+    radial-gradient(circle at 36% 22%, rgba(255, 255, 255, 0.28), transparent 23%),
+    #ffe1a3;
+  box-shadow:
+    0 7px 0 rgba(84, 44, 19, 0.24),
+    0 13px 20px rgba(55, 26, 8, 0.26);
+}
+
+.shogi-token span {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.28rem, 3vw, 1.72rem);
+}
+
+.shogi-token small {
+  color: #71401d;
+}
+
+.chess-board {
+  padding: 10px;
+  border-color: rgba(255, 228, 94, 0.35);
+  background: #22160e;
+}
+
+.chess-cell.light {
+  background: #f0d39a;
+}
+
+.chess-cell.dark {
+  background: #7b4d2e;
+}
+
+.chess-piece-token {
+  background: transparent;
+  border: 0;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.24),
+    0 0 18px rgba(255, 255, 255, 0.28);
+}
+
+.chess-piece-token.chess-w {
+  color: #fff8e8;
+  background: transparent;
+}
+
+.chess-piece-token.chess-b {
+  color: #15171c;
+  background: transparent;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.26),
+    0 0 14px rgba(0, 0, 0, 0.3);
+}
+
+.arcade-overlay {
+  background:
+    radial-gradient(circle, rgba(255, 79, 216, 0.24), rgba(8, 12, 22, 0.62) 58%, rgba(8, 12, 22, 0.2)),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 2px, transparent 2px 7px);
+}
+
+.arcade-overlay strong {
+  color: #ffe45e;
+  text-shadow:
+    0 0 20px rgba(255, 228, 94, 0.54),
+    0 0 38px rgba(255, 79, 216, 0.38);
+}
+
 @media (max-width: 980px) {
   .hub-hero {
     grid-template-columns: 1fr;
@@ -2113,6 +2386,360 @@ h3 {
   border-radius: 999px;
   background: rgba(240, 198, 111, 0.55);
   content: "";
+}
+
+.applet-thumbnail {
+  position: relative;
+  min-height: 124px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 250, 240, 0.18);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 24% 12%, rgba(24, 240, 255, 0.2), transparent 34%),
+    radial-gradient(circle at 80% 80%, rgba(255, 79, 216, 0.18), transparent 34%),
+    #09101d;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+}
+
+.featured-card .applet-thumbnail {
+  min-height: 150px;
+}
+
+.thumbnail-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+}
+
+.thumbnail-svg > rect:first-child {
+  fill: #09101d;
+}
+
+.thumb-board > rect:first-child,
+.thumb-puzzle > rect:first-child {
+  fill: #132022;
+}
+
+.thumb-arcade > rect:first-child {
+  fill: #080d1d;
+}
+
+.star {
+  fill: #fffaf0;
+  filter: drop-shadow(0 0 5px #18f0ff);
+}
+
+.ship,
+.bird,
+.cannon {
+  fill: #18f0ff;
+  stroke: #fffaf0;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 10px rgba(24, 240, 255, 0.75));
+}
+
+.rock {
+  fill: #7a3d2a;
+  stroke: #ffe45e;
+  stroke-width: 4;
+  filter: drop-shadow(0 0 8px rgba(255, 228, 94, 0.55));
+}
+
+.shot,
+.jump-arrow,
+.connection-red,
+.connection-blue {
+  fill: none;
+  stroke: #ffe45e;
+  stroke-linecap: round;
+  stroke-width: 5;
+}
+
+.snake-path {
+  fill: none;
+  stroke: #28d979;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 18;
+  filter: drop-shadow(0 0 9px rgba(40, 217, 121, 0.72));
+}
+
+.snake-head,
+.food,
+.ball,
+.lit-tile {
+  fill: #ffe45e;
+  filter: drop-shadow(0 0 10px rgba(255, 228, 94, 0.8));
+}
+
+.well {
+  fill: rgba(2, 7, 16, 0.68);
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 2;
+}
+
+.block,
+.brick,
+.paddle,
+.domino,
+.crate,
+.goal,
+.player,
+.invader {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 2;
+}
+
+.cyan,
+.brick-1 {
+  fill: #18f0ff;
+}
+
+.magenta,
+.brick-2,
+.horizontal {
+  fill: #ff4fd8;
+}
+
+.yellow,
+.brick-0,
+.vertical {
+  fill: #ffe45e;
+}
+
+.green {
+  fill: #28d979;
+}
+
+.paddle,
+.player,
+.owner-blue,
+.janggi-blue,
+.blue-piece {
+  fill: #168cff;
+}
+
+.gate,
+.wall {
+  fill: none;
+  stroke: #ff4fd8;
+  stroke-width: 10;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 9px rgba(255, 79, 216, 0.7));
+}
+
+.hex-ring,
+.hex-core {
+  fill: none;
+  stroke: #ffe45e;
+  stroke-width: 5;
+}
+
+.hex-core {
+  stroke: #18f0ff;
+}
+
+.wall-two {
+  stroke: #18f0ff;
+}
+
+.player-dot {
+  fill: #ff4fd8;
+}
+
+.tile-light {
+  fill: #f6d79a;
+}
+
+.tile-dark {
+  fill: #875a34;
+}
+
+.piece-text,
+.token-text,
+.shogi-text,
+.xo-letter,
+.number-tile {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 28px;
+  font-weight: 900;
+  text-anchor: middle;
+}
+
+.number-tile {
+  fill: #17202b;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+}
+
+.light-piece {
+  fill: #fffaf0;
+  stroke: #17202b;
+  stroke-width: 1.5;
+}
+
+.dark-piece {
+  fill: #171a22;
+  stroke: #fffaf0;
+  stroke-width: 1;
+}
+
+.board-surface {
+  fill: url("#thumb-wood");
+  stroke: #5c321d;
+  stroke-width: 3;
+}
+
+.board-line {
+  fill: none;
+  stroke: rgba(73, 39, 21, 0.62);
+  stroke-width: 2;
+}
+
+.janggi-red,
+.red-piece,
+.owner-red,
+.red-stone {
+  fill: #f24e43;
+}
+
+.token-text,
+.shogi-text {
+  fill: #fffaf0;
+  font-size: 22px;
+}
+
+.shogi-piece {
+  stroke: #fff4d6;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.mini-hex {
+  fill: #182635;
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-width: 2;
+}
+
+.connection-red {
+  stroke: #ff6a5f;
+}
+
+.connection-blue {
+  stroke: #18f0ff;
+}
+
+.stone {
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 2;
+}
+
+.dark-stone {
+  fill: #111217;
+}
+
+.light-stone {
+  fill: #fff7e8;
+}
+
+.blue-stone {
+  fill: #168cff;
+}
+
+.mill-line {
+  fill: none;
+  stroke: #ffe45e;
+  stroke-width: 4;
+}
+
+.thumb-puzzle .tile-light {
+  fill: #2d3e58;
+}
+
+.thumb-puzzle .tile-dark {
+  fill: #182434;
+}
+
+.peg-post {
+  stroke: #fff1bf;
+  stroke-linecap: round;
+  stroke-width: 6;
+}
+
+.hanoi-disk-art,
+.code-dot,
+.peg-art {
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 2;
+}
+
+.disk-0,
+.code-dot.c0 {
+  fill: #ff4fd8;
+}
+
+.disk-1,
+.code-dot.c1 {
+  fill: #18f0ff;
+}
+
+.disk-2,
+.code-dot.c2 {
+  fill: #ffe45e;
+}
+
+.disk-3,
+.code-dot.c3 {
+  fill: #28d979;
+}
+
+.code-dot.c4 {
+  fill: #b967ff;
+}
+
+.code-dot.c5,
+.crate {
+  fill: #ff7a3d;
+}
+
+.feedback-dot {
+  fill: #fffaf0;
+}
+
+.feedback-dot.empty,
+.peg-hole {
+  fill: transparent;
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 2;
+}
+
+.goal {
+  fill: #ffe45e;
+}
+
+.peg-art {
+  fill: #fffaf0;
+}
+
+.xo-letter.x {
+  fill: #ff4fd8;
+}
+
+.xo-letter.o {
+  fill: #18f0ff;
+}
+
+.invader {
+  fill: #28d979;
+}
+
+.thumbnail-sector-invaders .shot,
+.thumbnail-paddle-pop .shot,
+.thumbnail-wall-pong .shot {
+  stroke: #18f0ff;
+  stroke-width: 4;
 }
 
 .future-rack {

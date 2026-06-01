@@ -1,8 +1,8 @@
 import { ArrowRight, Gamepad2, Sparkles, Swords, Trophy } from "lucide-react";
+import { AppletThumbnail } from "./AppletThumbnail";
 import { appletsRegistry, type AppletRegistryEntry } from "./appletsRegistry";
 import { getHighScores } from "./gameScoring";
 
-const visualCellCount = 12;
 const featuredIds = new Set(["star-drift", "sector-invaders", "paddle-pop", "wall-pong"]);
 
 const sections = [
@@ -33,18 +33,6 @@ const sections = [
   },
 ];
 
-function AppletVisual({ id }: { id: string }) {
-  return (
-    <div className={`applet-visual visual-${id}`} aria-hidden="true">
-      <div className="visual-grid">
-        {Array.from({ length: visualCellCount }, (_, index) => (
-          <span key={index} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function AppletCard({
   applet,
   featured = false,
@@ -65,7 +53,7 @@ function AppletCard({
         <span className="status-tag">{featured ? "Featured" : applet.tags[0]}</span>
         <span className="applet-index">{String(index + 1).padStart(2, "0")}</span>
       </div>
-      <AppletVisual id={applet.id} />
+      <AppletThumbnail id={applet.id} />
       <h2>{applet.title}</h2>
       <p>{applet.description}</p>
       <div className="tag-row" aria-label={`${applet.title} tags`}>

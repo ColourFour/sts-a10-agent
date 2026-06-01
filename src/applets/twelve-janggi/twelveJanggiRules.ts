@@ -55,11 +55,11 @@ export const PIECE_LABELS: Record<PieceKind, string> = {
 };
 
 export const PIECE_SHORT_LABELS: Record<PieceKind, string> = {
-  king: "K",
-  general: "G",
-  minister: "M",
-  man: "Mn",
-  feudalLord: "FL",
+  king: "王",
+  general: "將",
+  minister: "相",
+  man: "卒",
+  feudalLord: "侯",
 };
 
 export function opponentOf(player: Player): Player {
