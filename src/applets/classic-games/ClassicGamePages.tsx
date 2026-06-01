@@ -1,11 +1,16 @@
 import { Chess, type Square as ChessSquare } from "chess.js";
-import { RotateCcw, Undo2 } from "lucide-react";
+import { Pause, Play, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { isSuperHexagonCollision, normalizeAngle, type SuperHexagonWall } from "./superHexagonMath";
 
 type PlayerMark = "A" | "B";
 type CellOwner = PlayerMark | null;
 type Point = { row: number; col: number };
+
+function themeClass(title: string): string {
+  return `theme-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
 
 function otherPlayer(player: PlayerMark): PlayerMark {
   return player === "A" ? "B" : "A";
@@ -30,7 +35,7 @@ function AppletPageShell({
   children: ReactNode;
 }) {
   return (
-    <main className="shell game-shell">
+    <main className={`shell game-shell ${themeClass(title)}`}>
       <nav className="page-nav" aria-label="Applet navigation">
         <a className="back-link" href="#/applets">
           <Undo2 size={17} aria-hidden="true" />
@@ -76,16 +81,33 @@ function StatusCard({
   );
 }
 
-function RulesList({ rules }: { rules: string[] }) {
+type InstructionSection = {
+  title: string;
+  items: string[];
+};
+
+function RulesList({
+  intro,
+  sections,
+}: {
+  intro: string;
+  sections: InstructionSection[];
+}) {
   return (
-    <aside className="rules-panel" aria-label="Rules">
-      <p className="eyebrow">Rules</p>
-      <h2>Quick reference</h2>
-      <ul>
-        {rules.map((rule) => (
-          <li key={rule}>{rule}</li>
-        ))}
-      </ul>
+    <aside className="rules-panel" aria-label="Instructions">
+      <p className="eyebrow">Instructions</p>
+      <h2>How to play</h2>
+      <p className="instructions-intro">{intro}</p>
+      {sections.map((section) => (
+        <section className="rules-section" key={section.title}>
+          <h3>{section.title}</h3>
+          <ul>
+            {section.items.map((rule) => (
+              <li key={rule}>{rule}</li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </aside>
   );
 }
@@ -189,29 +211,49 @@ export function HexPage() {
           />
         </aside>
         <section className="board-panel">
-          <div className="hex-board" style={{ gridTemplateColumns: `repeat(${size}, 1fr)` }}>
-            {board.map((row, rowIndex) =>
-              row.map((cell, colIndex) => (
+          <div className="hex-board">
+            {board.map((row, rowIndex) => (
+              <div className="hex-row" key={rowIndex} style={{ marginLeft: rowIndex * 18 }}>
+                {row.map((cell, colIndex) => (
                 <button
                   aria-label={`Hex ${rowIndex + 1}, ${colIndex + 1}`}
                   className={`hex-cell owner-${cell ?? "empty"}`}
                   key={`${rowIndex}:${colIndex}`}
                   onClick={() => play({ row: rowIndex, col: colIndex })}
-                  style={{ marginLeft: rowIndex * 7 }}
                   type="button"
                 >
                   {cell ?? ""}
                 </button>
-              )),
-            )}
+                ))}
+              </div>
+            ))}
           </div>
         </section>
         <RulesList
-          rules={[
-            "Players alternate placing stones on empty hexes.",
-            "Player A connects the left and right edges.",
-            "Player B connects the top and bottom edges.",
-            "The first completed connection wins.",
+          intro="Hex is a connection race. The board fills with stones, and a connected path across your assigned edges wins immediately."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Player A is red and must connect the left edge to the right edge.",
+                "Player B is blue and must connect the top edge to the bottom edge.",
+              ],
+            },
+            {
+              title: "Turn",
+              items: [
+                "Player A places first.",
+                "On your turn, click any empty hex to place one of your stones.",
+                "Stones never move or get removed after placement.",
+              ],
+            },
+            {
+              title: "Win",
+              items: [
+                "A path connects through neighboring hexes of your own color.",
+                "The first player with a complete path across their two edges wins.",
+              ],
+            },
           ]}
         />
       </section>
@@ -289,11 +331,30 @@ export function DomineeringPage() {
           </div>
         </section>
         <RulesList
-          rules={[
-            "Vertical places two stacked squares.",
-            "Horizontal places two side-by-side squares.",
-            "Dominoes cannot overlap existing pieces.",
-            "If the next player has no legal placement, the last player wins.",
+          intro="Domineering is a blocking game. Each player owns one domino direction, and the board gets tighter after every placement."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Vertical wins by leaving Horizontal with no legal horizontal domino placement.",
+                "Horizontal wins by leaving Vertical with no legal vertical domino placement.",
+              ],
+            },
+            {
+              title: "Turn",
+              items: [
+                "Vertical places a domino on two stacked empty squares.",
+                "Horizontal places a domino on two side-by-side empty squares.",
+                "Click the top square for a vertical domino or the left square for a horizontal domino.",
+              ],
+            },
+            {
+              title: "Limits",
+              items: [
+                "Dominoes cannot overlap existing dominoes or extend off the board.",
+                "Highlighted squares show legal starting positions for the current player.",
+              ],
+            },
           ]}
         />
       </section>
@@ -419,11 +480,30 @@ export function KonanePage() {
           </div>
         </section>
         <RulesList
-          rules={[
-            "Only jump captures are legal.",
-            "Jump orthogonally over one enemy piece into an empty square.",
-            "This prototype uses one jump per turn.",
-            "A player with no jump loses.",
+          intro="Konane is a jump-capture game. This compact prototype starts after the opening removals, with Black to move."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Capture enemy pieces by jumping over them.",
+                "Win by making sure the next player has no legal jump.",
+              ],
+            },
+            {
+              title: "Turn",
+              items: [
+                "Select one of your pieces.",
+                "Jump orthogonally over one adjacent enemy piece into the empty square immediately beyond it.",
+                "The jumped enemy piece is removed from the board.",
+              ],
+            },
+            {
+              title: "Prototype note",
+              items: [
+                "This version uses exactly one jump per turn.",
+                "Highlighted squares show the legal landing squares for the selected piece.",
+              ],
+            },
           ]}
         />
       </section>
@@ -488,8 +568,62 @@ function morrisPieceCount(board: Record<string, CellOwner>, player: PlayerMark):
   return Object.values(board).filter((cell) => cell === player).length;
 }
 
+function morrisPieces(board: Record<string, CellOwner>, player: PlayerMark): string[] {
+  return morrisPoints.filter((key) => board[key] === player);
+}
+
+function morrisPieceIsInMill(board: Record<string, CellOwner>, player: PlayerMark, key: string): boolean {
+  return morrisMills.some((mill) => mill.includes(key) && mill.every((point) => board[point] === player));
+}
+
+function canRemoveMorrisPiece(board: Record<string, CellOwner>, remover: PlayerMark, key: string): boolean {
+  const opponent = otherPlayer(remover);
+
+  if (board[key] !== opponent) {
+    return false;
+  }
+
+  const opponentPieces = morrisPieces(board, opponent);
+  const allOpponentPiecesAreInMills = opponentPieces.every((pieceKey) =>
+    morrisPieceIsInMill(board, opponent, pieceKey),
+  );
+
+  return allOpponentPiecesAreInMills || !morrisPieceIsInMill(board, opponent, key);
+}
+
+function morrisLegalDestinations(board: Record<string, CellOwner>, from: string, player: PlayerMark): string[] {
+  if (board[from] !== player) {
+    return [];
+  }
+
+  const canFly = morrisPieceCount(board, player) === 3;
+
+  if (canFly) {
+    return morrisPoints.filter((key) => board[key] === null);
+  }
+
+  return morrisAdjacency[from].filter((key) => board[key] === null);
+}
+
+function morrisHasMove(board: Record<string, CellOwner>, player: PlayerMark): boolean {
+  if (morrisPieceCount(board, player) < 3) {
+    return false;
+  }
+
+  return morrisPieces(board, player).some(
+    (key) => morrisLegalDestinations(board, key, player).length > 0,
+  );
+}
+
 export function NineMensMorrisPage() {
   const [state, setState] = useState<MorrisState>(() => initialMorrisState());
+  const morrisLegalTargets = new Set(
+    state.phase === "moving" && state.selected
+      ? morrisLegalDestinations(state.board, state.selected, state.currentPlayer)
+      : state.phase === "removing"
+        ? morrisPoints.filter((key) => canRemoveMorrisPiece(state.board, state.currentPlayer, key))
+        : [],
+  );
 
   function finishTurn(next: MorrisState, millKey: string | null): MorrisState {
     if (millKey && formsMill(next.board, next.currentPlayer, millKey)) {
@@ -498,10 +632,21 @@ export function NineMensMorrisPage() {
 
     const nextPlayer = otherPlayer(next.currentPlayer);
     const movingPhase = next.placed.A >= 9 && next.placed.B >= 9;
+    const nextPhase = movingPhase ? "moving" : "placing";
+
+    if (movingPhase && !morrisHasMove(next.board, nextPlayer)) {
+      return {
+        ...next,
+        winner: next.currentPlayer,
+        selected: null,
+        message: `Player ${next.currentPlayer} wins because Player ${nextPlayer} has no legal move.`,
+      };
+    }
+
     return {
       ...next,
       currentPlayer: nextPlayer,
-      phase: movingPhase ? "moving" : "placing",
+      phase: nextPhase,
       selected: null,
       message: `Player ${nextPlayer} to ${movingPhase ? "move" : "place"}.`,
     };
@@ -513,21 +658,30 @@ export function NineMensMorrisPage() {
     }
 
     if (state.phase === "removing") {
-      if (state.board[key] !== otherPlayer(state.currentPlayer)) {
+      if (!canRemoveMorrisPiece(state.board, state.currentPlayer, key)) {
+        setState({
+          ...state,
+          message:
+            "Remove an enemy piece outside a mill, unless every enemy piece is already in a mill.",
+        });
         return;
       }
 
       const board = { ...state.board, [key]: null };
       const opponent = otherPlayer(state.currentPlayer);
-      const winner = morrisPieceCount(board, opponent) < 3 && state.placed.A >= 9 && state.placed.B >= 9 ? state.currentPlayer : null;
+      const movingPhase = state.placed.A >= 9 && state.placed.B >= 9;
+      const winner = movingPhase && !morrisHasMove(board, opponent) ? state.currentPlayer : null;
+      const nextPhase = movingPhase ? "moving" : "placing";
       setState({
         ...state,
         board,
         currentPlayer: winner ? state.currentPlayer : opponent,
-        phase: winner ? "removing" : state.placed.A >= 9 && state.placed.B >= 9 ? "moving" : "placing",
+        phase: winner ? "removing" : nextPhase,
         winner,
         selected: null,
-        message: winner ? `Player ${state.currentPlayer} wins.` : `Player ${opponent} to move.`,
+        message: winner
+          ? `Player ${state.currentPlayer} wins because Player ${opponent} cannot continue.`
+          : `Player ${opponent} to ${nextPhase === "moving" ? "move" : "place"}.`,
       });
       return;
     }
@@ -543,8 +697,11 @@ export function NineMensMorrisPage() {
     }
 
     if (state.selected) {
-      const canFly = morrisPieceCount(state.board, state.currentPlayer) === 3;
-      const legalDestination = !state.board[key] && (canFly || morrisAdjacency[state.selected].includes(key));
+      const legalDestination = morrisLegalDestinations(
+        state.board,
+        state.selected,
+        state.currentPlayer,
+      ).includes(key);
       if (legalDestination) {
         const board = { ...state.board, [state.selected]: null, [key]: state.currentPlayer };
         setState(finishTurn({ ...state, board, selected: null }, key));
@@ -569,7 +726,7 @@ export function NineMensMorrisPage() {
               return (
                 <button
                   aria-label={`Morris point ${key}`}
-                  className={`morris-point owner-${state.board[key] ?? "empty"} ${state.selected === key ? "selected" : ""}`}
+                  className={`morris-point owner-${state.board[key] ?? "empty"} ${state.selected === key ? "selected" : ""} ${morrisLegalTargets.has(key) ? "legal-target" : ""}`}
                   key={key}
                   onClick={() => clickPoint(key)}
                   style={{ gridColumn: point.col + 1, gridRow: point.row + 1 }}
@@ -582,11 +739,31 @@ export function NineMensMorrisPage() {
           </div>
         </section>
         <RulesList
-          rules={[
-            "Players place nine pieces, then move one piece per turn.",
-            "Three in a row is a mill and lets you remove one enemy piece.",
-            "Move along board lines; with three pieces, a player may fly anywhere.",
-            "After placement, reducing the opponent below three pieces wins.",
+          intro="Nine Men's Morris has two phases: first players place pieces, then they slide them along the board lines to make mills."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Make rows of three pieces, called mills, to remove enemy pieces.",
+                "After all pieces are placed, win by leaving the opponent with fewer than three pieces or no legal move.",
+              ],
+            },
+            {
+              title: "Placement phase",
+              items: [
+                "Player A places first, and players alternate placing one piece on an empty point.",
+                "Each player places nine pieces total.",
+                "Whenever your new piece completes a mill, remove one enemy piece before the next turn.",
+              ],
+            },
+            {
+              title: "Movement phase",
+              items: [
+                "Select one of your pieces, then move it to a highlighted adjacent empty point.",
+                "If you have exactly three pieces, you may fly to any empty point.",
+                "You cannot remove a piece from an enemy mill unless every enemy piece is in a mill.",
+              ],
+            },
           ]}
         />
       </section>
@@ -652,6 +829,11 @@ export function AmazonsMiniPage() {
       return;
     }
 
+    if (phase === "move" && board[point.row][point.col] === currentPlayer) {
+      setSelected(point);
+      return;
+    }
+
     if (phase === "move" && selected && legalTargets.has(pointKey(point))) {
       const nextBoard = board.map((row) => [...row]);
       nextBoard[selected.row][selected.col] = ".";
@@ -714,10 +896,30 @@ export function AmazonsMiniPage() {
           </div>
         </section>
         <RulesList
-          rules={[
-            "Select an amazon, move any clear queen line, then shoot an arrow.",
-            "Arrows block future movement.",
-            "If the next player has no amazon move, the current player wins.",
+          intro="Amazons Mini is an area-control duel. Every turn moves one amazon and then permanently blocks one square with an arrow."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Trap the opponent so none of their amazons can move.",
+                "The player who makes the last move wins.",
+              ],
+            },
+            {
+              title: "Turn",
+              items: [
+                "Select one of your amazons.",
+                "Move it any distance in a clear straight or diagonal line, like a chess queen.",
+                "Then shoot an arrow from the amazon's new square in another clear straight or diagonal line.",
+              ],
+            },
+            {
+              title: "Blocked squares",
+              items: [
+                "Arrow squares are marked X and can never be entered or crossed.",
+                "You may select a different amazon before you commit to the move.",
+              ],
+            },
           ]}
         />
       </section>
@@ -728,6 +930,19 @@ export function AmazonsMiniPage() {
 type MiniKind = "K" | "G" | "S" | "B" | "R" | "P" | "+S" | "+B" | "+R" | "+P";
 type MiniPiece = { owner: PlayerMark; kind: MiniKind };
 type MiniBoard = (MiniPiece | null)[][];
+
+const miniPieceNames: Record<MiniKind, string> = {
+  K: "King",
+  G: "Gold",
+  S: "Silver",
+  B: "Bishop",
+  R: "Rook",
+  P: "Pawn",
+  "+S": "Promoted Silver",
+  "+B": "Promoted Bishop",
+  "+R": "Promoted Rook",
+  "+P": "Promoted Pawn",
+};
 
 function initialMiniShogiBoard(): MiniBoard {
   const board = makeMatrix<MiniPiece | null>(5, null);
@@ -740,6 +955,40 @@ function initialMiniShogiBoard(): MiniBoard {
 
 function demoteMini(kind: MiniKind): MiniKind {
   return kind.startsWith("+") ? (kind.slice(1) as MiniKind) : kind;
+}
+
+function miniPromotionRow(player: PlayerMark): number {
+  return player === "A" ? 0 : 4;
+}
+
+function miniCanPromote(piece: MiniPiece, to: Point): boolean {
+  return (
+    (piece.kind === "P" || piece.kind === "S" || piece.kind === "B" || piece.kind === "R") &&
+    to.row === miniPromotionRow(piece.owner)
+  );
+}
+
+function miniLegalDrops(board: MiniBoard, player: PlayerMark, kind: MiniKind): Point[] {
+  const dropKind = demoteMini(kind);
+
+  return board.flatMap((row, rowIndex) =>
+    row.flatMap((cell, colIndex) => {
+      if (cell || (dropKind === "P" && rowIndex === miniPromotionRow(player))) {
+        return [];
+      }
+
+      return [{ row: rowIndex, col: colIndex }];
+    }),
+  );
+}
+
+function removeOneMiniHandPiece(hand: MiniKind[], kindToRemove: MiniKind): MiniKind[] {
+  const index = hand.indexOf(kindToRemove);
+  if (index === -1) {
+    return hand;
+  }
+
+  return hand.filter((_, itemIndex) => itemIndex !== index);
 }
 
 function miniDeltas(piece: MiniPiece): Point[] {
@@ -813,43 +1062,79 @@ export function MiniShogiPage() {
   const [hands, setHands] = useState<Record<PlayerMark, MiniKind[]>>({ A: [], B: [] });
   const [dropKind, setDropKind] = useState<MiniKind | null>(null);
   const [winner, setWinner] = useState<PlayerMark | null>(null);
+  const [message, setMessage] = useState(
+    "Player A starts. Select one of your pieces to see legal moves.",
+  );
 
   const legalTargets = new Set(
-    selected ? miniLegalMoves(board, selected).map(pointKey) : dropKind ? board.flatMap((row, rowIndex) => row.map((cell, colIndex) => (!cell ? `${rowIndex}:${colIndex}` : ""))).filter(Boolean) : [],
+    selected
+      ? miniLegalMoves(board, selected).map(pointKey)
+      : dropKind
+        ? miniLegalDrops(board, currentPlayer, dropKind).map(pointKey)
+        : [],
   );
 
   function moveOrDrop(point: Point) {
     if (winner) {
+      setMessage("The game is over. Reset the board to play again.");
       return;
     }
-    if (dropKind && !board[point.row][point.col]) {
+    if (dropKind && legalTargets.has(pointKey(point))) {
       const nextBoard = board.map((row) => [...row]);
       nextBoard[point.row][point.col] = { owner: currentPlayer, kind: dropKind };
-      setHands({ ...hands, [currentPlayer]: hands[currentPlayer].filter((kind, index) => kind !== dropKind || index !== hands[currentPlayer].indexOf(dropKind)) });
+      setHands({
+        ...hands,
+        [currentPlayer]: removeOneMiniHandPiece(hands[currentPlayer], dropKind),
+      });
       setBoard(nextBoard);
       setDropKind(null);
-      setCurrentPlayer(otherPlayer(currentPlayer));
+      const nextPlayer = otherPlayer(currentPlayer);
+      setCurrentPlayer(nextPlayer);
+      setMessage(
+        `Player ${currentPlayer} dropped ${miniPieceNames[dropKind]}. Player ${nextPlayer} to move.`,
+      );
       return;
     }
     if (selected && legalTargets.has(pointKey(point))) {
       const nextBoard = board.map((row) => [...row]);
       const piece = nextBoard[selected.row][selected.col]!;
       const captured = nextBoard[point.row][point.col];
-      if (captured?.kind === "K") {
-        setWinner(currentPlayer);
-      }
-      const promote = (piece.kind === "P" || piece.kind === "S" || piece.kind === "B" || piece.kind === "R") && (point.row === 0 || point.row === 4);
+      const promote = miniCanPromote(piece, point);
       nextBoard[point.row][point.col] = promote ? { ...piece, kind: `+${piece.kind}` as MiniKind } : piece;
       nextBoard[selected.row][selected.col] = null;
       setBoard(nextBoard);
       setHands(captured && captured.kind !== "K" ? { ...hands, [currentPlayer]: [...hands[currentPlayer], demoteMini(captured.kind)] } : hands);
       setSelected(null);
-      setCurrentPlayer(otherPlayer(currentPlayer));
+      setDropKind(null);
+
+      if (captured?.kind === "K") {
+        setWinner(currentPlayer);
+        setMessage(`Player ${currentPlayer} captured the King and wins.`);
+        return;
+      }
+
+      const nextPlayer = otherPlayer(currentPlayer);
+      setCurrentPlayer(nextPlayer);
+      setMessage(
+        [
+          `Player ${currentPlayer} moved ${miniPieceNames[piece.kind]}.`,
+          captured ? `Captured ${miniPieceNames[captured.kind]}.` : "",
+          promote ? `Promoted to ${miniPieceNames[`+${piece.kind}` as MiniKind]}.` : "",
+          `Player ${nextPlayer} to move.`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
       return;
     }
     const piece = board[point.row][point.col];
     setDropKind(null);
     setSelected(piece?.owner === currentPlayer ? point : null);
+    setMessage(
+      piece?.owner === currentPlayer
+        ? `${miniPieceNames[piece.kind]} selected. Choose a highlighted square.`
+        : `Select one of Player ${currentPlayer}'s pieces or a captured piece in hand.`,
+    );
   }
 
   function reset() {
@@ -859,6 +1144,7 @@ export function MiniShogiPage() {
     setHands({ A: [], B: [] });
     setDropKind(null);
     setWinner(null);
+    setMessage("New game started. Player A to move.");
   }
 
   return (
@@ -866,11 +1152,11 @@ export function MiniShogiPage() {
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
-          <StatusCard message="Select a board piece to move, or select a captured piece to drop on an empty square." title={`Player ${currentPlayer} to move`} winner={winner ? `Player ${winner}` : null} />
+          <StatusCard message={message} title={`Player ${currentPlayer} to move`} winner={winner ? `Player ${winner}` : null} />
           <div className="hand-pieces">
             {hands[currentPlayer].length === 0 ? <p className="empty-hand">No captured pieces</p> : hands[currentPlayer].map((kind, index) => (
-              <button className={`hand-piece ${dropKind === kind ? "selected" : ""}`} key={`${kind}-${index}`} onClick={() => { setSelected(null); setDropKind(kind); }} type="button">
-                <span>{kind}</span>
+              <button className={`hand-piece ${dropKind === kind ? "selected" : ""}`} key={`${kind}-${index}`} onClick={() => { setSelected(null); setDropKind(kind); setMessage(`${miniPieceNames[kind]} selected from hand. Drop it on a highlighted empty square.`); }} type="button">
+                <span>{miniPieceNames[kind]}</span>
                 <strong>drop</strong>
               </button>
             ))}
@@ -882,8 +1168,13 @@ export function MiniShogiPage() {
               row.map((cell, colIndex) => {
                 const key = `${rowIndex}:${colIndex}`;
                 return (
-                  <button className={`mini-cell owner-${cell?.owner ?? "empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`} key={key} onClick={() => moveOrDrop({ row: rowIndex, col: colIndex })} type="button">
-                    {cell ? `${cell.owner}${cell.kind}` : ""}
+                  <button aria-label={cell ? `${miniPieceNames[cell.kind]} for Player ${cell.owner}` : `Mini Shogi square ${rowIndex + 1}, ${colIndex + 1}`} className={`mini-cell owner-${cell?.owner ?? "empty"} ${selected && pointKey(selected) === key ? "selected" : ""} ${legalTargets.has(key) ? "legal-target" : ""}`} key={key} onClick={() => moveOrDrop({ row: rowIndex, col: colIndex })} type="button">
+                    {cell ? (
+                      <span className={`shogi-token shogi-${cell.owner}`}>
+                        <span>{cell.kind}</span>
+                        <small>P{cell.owner}</small>
+                      </span>
+                    ) : ""}
                   </button>
                 );
               }),
@@ -891,11 +1182,34 @@ export function MiniShogiPage() {
           </div>
         </section>
         <RulesList
-          rules={[
-            "Move pieces using shogi-style movement on a 5 by 5 board.",
-            "Captured pieces enter the capturer's hand and can be dropped later.",
-            "Pawn, Silver, Bishop, and Rook auto-promote on the far rank in this prototype.",
-            "Capturing the King wins.",
+          intro="Mini Shogi is a compact capture-and-drop strategy game. This prototype uses King capture as the win condition."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Capture the opposing King.",
+                "Use captured pieces as reinforcements by dropping them back onto the board as your own.",
+              ],
+            },
+            {
+              title: "Turn",
+              items: [
+                "Select one of your board pieces, then choose a highlighted destination.",
+                "Instead of moving, you may select a captured piece from your hand and drop it on a highlighted empty square.",
+                "Captured non-King pieces go into the capturer's hand and lose promotion.",
+              ],
+            },
+            {
+              title: "Pieces",
+              items: [
+                "K moves one square in any direction.",
+                "G moves one square forward, sideways, diagonally forward, or straight backward.",
+                "S moves one square forward, diagonally forward, or diagonally backward.",
+                "B slides diagonally, R slides orthogonally, and P moves one square forward.",
+                "Pawn, Silver, Bishop, and Rook promote automatically on the far rank.",
+                "Pawns cannot be dropped on the far rank because they would have no forward move.",
+              ],
+            },
           ]}
         />
       </section>
@@ -904,6 +1218,29 @@ export function MiniShogiPage() {
 }
 
 const chessFiles = ["a", "b", "c", "d", "e", "f", "g", "h"];
+const chessPieceNames: Record<string, string> = {
+  p: "Pawn",
+  n: "Knight",
+  b: "Bishop",
+  r: "Rook",
+  q: "Queen",
+  k: "King",
+};
+
+const chessPieceGlyphs: Record<string, string> = {
+  bk: "♚",
+  bq: "♛",
+  br: "♜",
+  bb: "♝",
+  bn: "♞",
+  bp: "♟",
+  wk: "♔",
+  wq: "♕",
+  wr: "♖",
+  wb: "♗",
+  wn: "♘",
+  wp: "♙",
+};
 
 export function ChessPage() {
   const [game, setGame] = useState(() => new Chess());
@@ -913,6 +1250,14 @@ export function ChessPage() {
   const legalTargets = new Set(
     selected ? game.moves({ square: selected, verbose: true }).map((move) => move.to) : [],
   );
+  const chessWinner = game.isCheckmate() ? (game.turn() === "w" ? "Black" : "White") : null;
+  const chessTitle = chessWinner
+    ? "Checkmate"
+    : game.isDraw()
+      ? "Draw"
+      : game.turn() === "w"
+        ? "White to move"
+        : "Black to move";
 
   function reset() {
     setGame(new Chess());
@@ -921,6 +1266,12 @@ export function ChessPage() {
   }
 
   function clickSquare(square: ChessSquare) {
+    if (game.isGameOver()) {
+      setSelected(null);
+      setMessage("The game is over. Reset the board to play again.");
+      return;
+    }
+
     const piece = game.get(square);
     if (selected && legalTargets.has(square)) {
       const nextGame = new Chess(game.fen());
@@ -952,7 +1303,7 @@ export function ChessPage() {
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
-          <StatusCard message={message} title={game.turn() === "w" ? "White to move" : "Black to move"} winner={game.isCheckmate() ? (game.turn() === "w" ? "Black" : "White") : null} />
+          <StatusCard message={message} title={chessTitle} winner={chessWinner} />
         </aside>
         <section className="board-panel">
           <div className="square-board chess-board" style={{ gridTemplateColumns: "repeat(8, 1fr)" }}>
@@ -960,8 +1311,22 @@ export function ChessPage() {
               row.map((piece, colIndex) => {
                 const square = `${chessFiles[colIndex]}${8 - rowIndex}` as ChessSquare;
                 return (
-                  <button className={`mini-cell chess-cell ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${selected === square ? "selected" : ""} ${legalTargets.has(square) ? "legal-target" : ""}`} key={square} onClick={() => clickSquare(square)} type="button">
-                    {piece ? `${piece.color === "w" ? "W" : "B"}${piece.type.toUpperCase()}` : ""}
+                  <button
+                    aria-label={
+                      piece
+                        ? `${square}: ${piece.color === "w" ? "White" : "Black"} ${chessPieceNames[piece.type]}`
+                        : `${square}: empty`
+                    }
+                    className={`mini-cell chess-cell ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${selected === square ? "selected" : ""} ${legalTargets.has(square) ? "legal-target" : ""}`}
+                    key={square}
+                    onClick={() => clickSquare(square)}
+                    type="button"
+                  >
+                    {piece ? (
+                      <span className={`chess-piece-token chess-${piece.color}`}>
+                        {chessPieceGlyphs[`${piece.color}${piece.type}`]}
+                      </span>
+                    ) : ""}
                   </button>
                 );
               }),
@@ -969,11 +1334,30 @@ export function ChessPage() {
           </div>
         </section>
         <RulesList
-          rules={[
-            "Standard chess legal moves are enforced by chess.js.",
-            "Select one of your pieces, then select a highlighted destination.",
-            "Pawn promotion auto-selects Queen in this prototype.",
-            "Checkmate and draw states are reported in the status panel.",
+          intro="This applet plays standard chess with legal moves checked by chess.js. It is built for two people sharing the same screen."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Checkmate the opposing King: put it in check with no legal escape.",
+                "The applet also reports standard draw states, including stalemate.",
+              ],
+            },
+            {
+              title: "Turn",
+              items: [
+                "White moves first, then players alternate.",
+                "Select one of your pieces, then choose a highlighted legal destination.",
+                "You cannot make a move that leaves your own King in check.",
+              ],
+            },
+            {
+              title: "Prototype note",
+              items: [
+                "Pawn promotion automatically chooses a Queen.",
+                "The board uses compact piece labels: WQ is White Queen, BK is Black King, and so on.",
+              ],
+            },
           ]}
         />
       </section>
@@ -1021,7 +1405,7 @@ export function SuperHexagonPage() {
     let last = performance.now();
     let spawn = 0;
     let elapsed = 0;
-    let obstacles: { radius: number; gap: number; rotation: number }[] = [];
+    let obstacles: SuperHexagonWall[] = [];
 
     function frame(now: number) {
       const canvas = canvasRef.current;
@@ -1044,8 +1428,8 @@ export function SuperHexagonPage() {
       }
       obstacles = obstacles.map((wall) => ({ ...wall, radius: wall.radius - dt * (76 + elapsed * 3) })).filter((wall) => wall.radius > 24);
 
-      const playerSector = ((Math.floor((((angle % (Math.PI * 2)) + Math.PI * 2) / (Math.PI / 3)) % 6) + 6) % 6);
-      const hit = obstacles.some((wall) => wall.radius < 64 && wall.radius > 34 && playerSector !== wall.gap);
+      const playerAngle = normalizeAngle(angle - Math.PI / 2);
+      const hit = isSuperHexagonCollision({ playerAngle, walls: obstacles });
       if (hit) {
         setBest((value) => Math.max(value, Math.floor(elapsed * 10)));
         setScore(Math.floor(elapsed * 10));
@@ -1109,20 +1493,49 @@ export function SuperHexagonPage() {
     <AppletPageShell title="Super Hexagon" subtitle="A one-player reflex game: rotate through the gaps and survive.">
       <section className="mini-game-layout">
         <aside className="side-panel">
-          <button className="secondary-button wide" onClick={() => setRunning((value) => !value)} type="button">
+          <button className="secondary-button primary-action wide" onClick={() => {
+            setRunning((value) => {
+              if (!value) {
+                setScore(0);
+              }
+              return !value;
+            });
+          }} type="button">
+            {running ? <Pause size={17} aria-hidden="true" /> : <Play size={17} aria-hidden="true" />}
             {running ? "Pause" : "Start"}
           </button>
           <ResetButton onClick={() => { setRunning(false); setScore(0); }} />
-          <StatusCard message="Use Left/Right arrows or A/D. Avoid incoming walls unless you are aligned with the gap." title={`Score ${score} - Best ${best}`} />
+          <StatusCard message="Use Left/Right arrows or A/D. Avoid incoming walls unless you are aligned with the gap." title={`Score ${score} / Best ${best}`} />
         </aside>
         <section className="board-panel super-panel">
           <canvas className="super-canvas" height={520} ref={canvasRef} width={520} />
         </section>
         <RulesList
-          rules={[
-            "Rotate around the center with ArrowLeft/ArrowRight or A/D.",
-            "Walls collapse inward; pass through each wall's gap.",
-            "Collision ends the run and records the best score.",
+          intro="Super Hexagon is a reflex challenge. Rotate the small triangle around the center and survive the incoming walls."
+          sections={[
+            {
+              title: "Goal",
+              items: [
+                "Survive as long as possible.",
+                "Your score rises over time, and the best score records your longest run this session.",
+              ],
+            },
+            {
+              title: "Controls",
+              items: [
+                "Press Start to begin a new run.",
+                "Use ArrowLeft or A to rotate counterclockwise.",
+                "Use ArrowRight or D to rotate clockwise.",
+              ],
+            },
+            {
+              title: "Walls",
+              items: [
+                "Each wall has one open gap.",
+                "Line the triangle up with the visible gap before the wall reaches the center.",
+                "Hitting a wall ends the run.",
+              ],
+            },
           ]}
         />
       </section>

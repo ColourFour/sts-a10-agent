@@ -20,10 +20,16 @@ npm ci
 npm run typecheck --if-present
 npm test --if-present
 npm run build
+npm run check:static --if-present
+npm run qa:screenshots --if-present
 ```
 
 The build output is written to `dist/`, which is the directory uploaded by the
 GitHub Pages workflow.
+
+The Vite app uses `base: "./"` so built CSS and JavaScript assets are referenced
+relative to `index.html`. That keeps the same static output working from the
+GitHub Pages project path, even if the repository name or Pages subpath changes.
 
 Goal: build a Regent-first decision engine that can eventually farm Ascension 10 reliably through inspectable state parsing, deterministic calculators, policy evaluation, and run logging.
 

@@ -10,6 +10,14 @@ import {
   NineMensMorrisPage,
   SuperHexagonPage,
 } from "./applets/classic-games/ClassicGamePages";
+import {
+  LightsOutPage,
+  MastermindPage,
+  PegSolitairePage,
+  SlidingTilesPage,
+  SokobanMiniPage,
+  TowersOfHanoiPage,
+} from "./applets/puzzle-games/PuzzleGamePages";
 import { TwelveJanggiPage } from "./applets/twelve-janggi/TwelveJanggiPage";
 import { XoGamePage } from "./applets/xo-game-lab/XoGamePage";
 
@@ -70,6 +78,30 @@ export function App() {
 
   if (route === "/applets/super-hexagon") {
     return <SuperHexagonPage />;
+  }
+
+  if (route === "/applets/lights-out") {
+    return <LightsOutPage />;
+  }
+
+  if (route === "/applets/sliding-tiles") {
+    return <SlidingTilesPage />;
+  }
+
+  if (route === "/applets/towers-of-hanoi") {
+    return <TowersOfHanoiPage />;
+  }
+
+  if (route === "/applets/mastermind") {
+    return <MastermindPage />;
+  }
+
+  if (route === "/applets/peg-solitaire") {
+    return <PegSolitairePage />;
+  }
+
+  if (route === "/applets/sokoban-mini") {
+    return <SokobanMiniPage />;
   }
 
   return <AppletHub />;

@@ -114,7 +114,7 @@ export function XoGamePage() {
   }
 
   return (
-    <main className="shell xo-shell">
+    <main className="shell xo-shell game-shell theme-xo-game-lab">
       <nav className="page-nav" aria-label="Applet navigation">
         <a className="back-link" href="#/applets">
           <Undo2 size={17} aria-hidden="true" />
@@ -126,6 +126,10 @@ export function XoGamePage() {
         <div>
           <p className="eyebrow">Playable prototype</p>
           <h1>XO Game Lab</h1>
+          <p className="page-subtitle">
+            A strip-placement game about avoiding matching neighbors while
+            choosing both a symbol turn and a color.
+          </p>
         </div>
         <button className="secondary-button" onClick={() => resetGame()} type="button">
           <RotateCcw size={17} aria-hidden="true" />
@@ -161,6 +165,7 @@ export function XoGamePage() {
                 className={`color-choice ${color} ${
                   selectedColor === color ? "selected" : ""
                 }`}
+                aria-pressed={selectedColor === color}
                 key={color}
                 onClick={() => setSelectedColor(color)}
                 type="button"
@@ -172,6 +177,7 @@ export function XoGamePage() {
 
           <button
             className="secondary-button wide"
+            aria-pressed={showValidMoves}
             onClick={() => setShowValidMoves((value) => !value)}
             type="button"
           >
@@ -224,7 +230,7 @@ export function XoGamePage() {
                   <div
                     className={`xo-strip ${stripIsBlank ? "blank-strip" : ""}`}
                     style={{
-                      gridTemplateColumns: `repeat(${strip.length}, minmax(34px, 1fr))`,
+                      gridTemplateColumns: `repeat(${strip.length}, minmax(42px, 64px))`,
                     }}
                   >
                     {strip.map((cell, cellIndex) => {
@@ -262,23 +268,57 @@ export function XoGamePage() {
             <span>{feedback}</span>
           </div>
 
-          <p className="helper-text">
-            {totalLegalMoves} legal move{totalLegalMoves === 1 ? "" : "s"} for{" "}
-            {game.currentPlayer}
-            {game.winner ? " after game end" : ""}
+          <p className="helper-text legal-move-count">
+            {game.winner
+              ? "Reset the board to explore another strip layout."
+              : `${totalLegalMoves} legal move${
+                  totalLegalMoves === 1 ? "" : "s"
+                } available for ${game.currentPlayer}.`}
           </p>
         </section>
 
-        <aside className="rules-panel" aria-label="XO game rules">
-          <p className="eyebrow">Rules</p>
-          <h2>Quick reference</h2>
-          <ul>
-            <li>Choose Red or Blue for your next mark.</li>
-            <li>Click a blank square to place the current player.</li>
-            <li>While any strip is blank, you must play on a blank strip.</li>
-            <li>Neighboring filled squares must differ by symbol and color.</li>
-            <li>The player with no legal move loses.</li>
-          </ul>
+        <aside className="rules-panel" aria-label="XO game instructions">
+          <p className="eyebrow">Instructions</p>
+          <h2>How to play</h2>
+          <p className="instructions-intro">
+            XO Game Lab is a two-player placement puzzle. The turn decides
+            whether the mark is X or O; the player chooses whether that mark is
+            red or blue.
+          </p>
+
+          <section className="rules-section">
+            <h3>Goal</h3>
+            <ul>
+              <li>Keep making legal placements while limiting the opponent's options.</li>
+              <li>The player who leaves the next player with no legal move wins.</li>
+            </ul>
+          </section>
+
+          <section className="rules-section">
+            <h3>Turn</h3>
+            <ul>
+              <li>X starts, then turns alternate between X and O.</li>
+              <li>Choose Red or Blue before placing the current symbol.</li>
+              <li>Click a highlighted blank square to place the mark.</li>
+            </ul>
+          </section>
+
+          <section className="rules-section">
+            <h3>Legal placement</h3>
+            <ul>
+              <li>While any strip is completely blank, you must play on a completely blank strip.</li>
+              <li>After every strip has at least one mark, any legal blank square may be used.</li>
+              <li>A new mark cannot match the symbol or color of an adjacent filled square on the same strip.</li>
+            </ul>
+          </section>
+
+          <section className="rules-section">
+            <h3>Board setup</h3>
+            <ul>
+              <li>Strip lengths are comma-separated positive whole numbers.</li>
+              <li>Changing the strip lengths and leaving the field resets the board.</li>
+            </ul>
+          </section>
         </aside>
       </section>
     </main>

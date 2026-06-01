@@ -100,4 +100,58 @@ export const appletsRegistry: AppletRegistryEntry[] = [
     status: "Playable Prototype",
     tags: ["Arcade", "Single-player", "Canvas"],
   },
+  {
+    id: "lights-out",
+    title: "Lights Out",
+    description:
+      "Flip cross-shaped neighborhoods until every light on the grid is off.",
+    route: "/applets/lights-out",
+    status: "Playable Prototype",
+    tags: ["Puzzle", "Single-player", "Logic"],
+  },
+  {
+    id: "sliding-tiles",
+    title: "Sliding Tiles",
+    description:
+      "Reorder a scrambled 4 by 4 tile board by sliding tiles into the blank space.",
+    route: "/applets/sliding-tiles",
+    status: "Playable Prototype",
+    tags: ["Puzzle", "Single-player", "Permutation"],
+  },
+  {
+    id: "towers-of-hanoi",
+    title: "Towers of Hanoi",
+    description:
+      "Move a full disk stack across three pegs without placing larger disks on smaller ones.",
+    route: "/applets/towers-of-hanoi",
+    status: "Playable Prototype",
+    tags: ["Puzzle", "Single-player", "Planning"],
+  },
+  {
+    id: "mastermind",
+    title: "Mastermind",
+    description:
+      "Deduce a hidden color code from exact and color-only feedback.",
+    route: "/applets/mastermind",
+    status: "Playable Prototype",
+    tags: ["Deduction", "Single-player", "Logic"],
+  },
+  {
+    id: "peg-solitaire",
+    title: "Peg Solitaire",
+    description:
+      "Jump pegs over one another and reduce the board to a single remaining peg.",
+    route: "/applets/peg-solitaire",
+    status: "Playable Prototype",
+    tags: ["Puzzle", "Single-player", "Jumping"],
+  },
+  {
+    id: "sokoban-mini",
+    title: "Sokoban Mini",
+    description:
+      "Push crates onto goal squares without trapping them against walls.",
+    route: "/applets/sokoban-mini",
+    status: "Playable Prototype",
+    tags: ["Spatial", "Single-player", "Problem solving"],
+  },
 ];

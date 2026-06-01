@@ -218,7 +218,7 @@ export function TwelveJanggiPage() {
   const pendingThreat = state.pendingKingTerritoryThreat;
 
   return (
-    <main className="shell game-shell">
+    <main className="shell game-shell theme-twelve-janggi">
       <nav className="page-nav" aria-label="Applet navigation">
         <a className="back-link" href="#/applets">
           <Undo2 size={17} aria-hidden="true" />
@@ -230,6 +230,10 @@ export function TwelveJanggiPage() {
         <div>
           <p className="eyebrow">Playable prototype</p>
           <h1>Twelve Janggi</h1>
+          <p className="page-subtitle">
+            A 3 by 4 strategy game with captures, drops, promotion, and a
+            delayed King-territory win condition.
+          </p>
         </div>
         <button className="secondary-button" onClick={resetGame} type="button">
           <RotateCcw size={17} aria-hidden="true" />
@@ -273,23 +277,43 @@ export function TwelveJanggiPage() {
           </div>
         </section>
 
-        <aside className="rules-panel" aria-label="Twelve Janggi rules">
-          <p className="eyebrow">Rules</p>
-          <h2>Quick reference</h2>
-          <ul>
-            <li>King moves one square in any direction.</li>
-            <li>General moves one square orthogonally.</li>
-            <li>Minister moves one square diagonally.</li>
-            <li>Man moves one square forward and promotes on entry.</li>
-            <li>Feudal Lord moves like a King except diagonally backward.</li>
-            <li>Captured non-Kings go to hand; Feudal Lords become Men.</li>
-            <li>Hand pieces drop on empty squares, never in opponent territory.</li>
-            <li>Capturing the King wins immediately.</li>
-            <li>
-              A King in opponent territory wins only if it survives the
-              opponent's next turn.
-            </li>
-          </ul>
+        <aside className="rules-panel" aria-label="Twelve Janggi instructions">
+          <p className="eyebrow">Instructions</p>
+          <h2>How to play</h2>
+          <p className="instructions-intro">
+            Player A starts at the bottom and moves upward. Player B starts at
+            the top and moves downward. Select a piece or hand piece, then choose
+            one of the highlighted legal squares.
+          </p>
+
+          <section className="rules-section">
+            <h3>Goal</h3>
+            <ul>
+              <li>Capture the enemy King to win immediately.</li>
+              <li>You can also win by moving your King into the opponent's territory and having it survive the opponent's next turn.</li>
+            </ul>
+          </section>
+
+          <section className="rules-section">
+            <h3>Turn</h3>
+            <ul>
+              <li>Move one board piece to a highlighted square, or drop one captured hand piece onto a highlighted empty square.</li>
+              <li>Captured non-King pieces enter the capturer's hand and may be dropped later as that player's piece.</li>
+              <li>Feudal Lords become Men when captured.</li>
+              <li>Hand pieces cannot be dropped into the opponent's territory row.</li>
+            </ul>
+          </section>
+
+          <section className="rules-section">
+            <h3>Pieces</h3>
+            <ul>
+              <li>King moves one square in any direction.</li>
+              <li>General moves one square orthogonally: up, down, left, or right.</li>
+              <li>Minister moves one square diagonally.</li>
+              <li>Man moves one square forward and promotes to Feudal Lord when it enters opponent territory.</li>
+              <li>Feudal Lord moves like a King except it cannot move diagonally backward.</li>
+            </ul>
+          </section>
         </aside>
       </section>
     </main>
