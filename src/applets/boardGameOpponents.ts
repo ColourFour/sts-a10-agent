@@ -12,6 +12,9 @@ import {
   type PieceKind as TwelveJanggiPieceKind,
   type Player as TwelveJanggiPlayer,
   type Square as TwelveJanggiSquare,
+  isOpponentTerritory as isTwelveJanggiOpponentTerritory,
+  opponentOf as twelveJanggiOpponentOf,
+  sameSquare as sameTwelveJanggiSquare,
 } from "./twelve-janggi/twelveJanggiRules";
 import { applyMove as applyXoMove, listLegalMoves as listXoLegalMoves, type Board as XoBoard, type Move as XoMove, type SymbolMark } from "../xoGame";
 
@@ -789,21 +792,210 @@ export function selectTwelveJanggiComputerMove({
 }): TwelveJanggiMove | null {
   const moves = listTwelveJanggiLegalMoves(state);
   if (difficulty === "easy") return chooseRandomMove(moves, random);
-  return chooseBestByScore(
-    moves,
-    (move) => {
-      const targetPiece = move.type === "move" ? state.board[move.to.row][move.to.col] : null;
-      const next = applyTwelveJanggiComputerMove(state, move);
-      if (!next) return Number.NEGATIVE_INFINITY;
-      const dropPenalty = move.type === "drop" ? -1 : 0;
-      return (next.winner ? 1000 : 0) + (targetPiece ? twelveJanggiPieceValue(targetPiece.kind) * 10 : 0) + dropPenalty;
-    },
-    random,
-  );
+
+  const rootPlayer = state.currentPlayer;
+  const depth = difficulty === "hard" ? 6 : 5;
+  const orderedMoves = orderTwelveJanggiMoves(state, moves, rootPlayer);
+  let bestScore = Number.NEGATIVE_INFINITY;
+  let bestMoves: TwelveJanggiMove[] = [];
+
+  orderedMoves.forEach((move) => {
+    const next = applyTwelveJanggiComputerMove(state, move);
+    if (!next) {
+      return;
+    }
+
+    const score = twelveJanggiMinimax(
+      next,
+      depth - 1,
+      rootPlayer,
+      Number.NEGATIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    );
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMoves = [move];
+    } else if (score === bestScore) {
+      bestMoves.push(move);
+    }
+  });
+
+  return chooseRandomMove(bestMoves, random);
 }
 
 function twelveJanggiPieceValue(kind: TwelveJanggiPieceKind): number {
-  return { king: 100, general: 5, minister: 4, feudalLord: 6, man: 1 }[kind];
+  return { king: 10000, general: 650, minister: 520, feudalLord: 720, man: 180 }[kind];
+}
+
+function orderTwelveJanggiMoves(
+  state: TwelveJanggiState,
+  moves: TwelveJanggiMove[],
+  rootPlayer: TwelveJanggiPlayer,
+): TwelveJanggiMove[] {
+  return [...moves].sort((a, b) => twelveJanggiStaticMoveScore(state, b, rootPlayer) - twelveJanggiStaticMoveScore(state, a, rootPlayer));
+}
+
+function twelveJanggiStaticMoveScore(
+  state: TwelveJanggiState,
+  move: TwelveJanggiMove,
+  rootPlayer: TwelveJanggiPlayer,
+): number {
+  const mover = state.currentPlayer;
+  const sign = mover === rootPlayer ? 1 : -1;
+  const targetPiece = move.type === "move" ? state.board[move.to.row][move.to.col] : null;
+  const next = applyTwelveJanggiComputerMove(state, move);
+  if (!next) return Number.NEGATIVE_INFINITY;
+  return sign * (
+    (next.winner === mover ? 1_000_000 : 0) +
+    (targetPiece ? twelveJanggiPieceValue(targetPiece.kind) * 8 : 0) +
+    (move.type === "drop" ? twelveJanggiPieceValue(move.kind) : 0) +
+    twelveJanggiPositionBonus(next, rootPlayer) -
+    twelveJanggiPositionBonus(state, rootPlayer)
+  );
+}
+
+function twelveJanggiMinimax(
+  state: TwelveJanggiState,
+  depth: number,
+  rootPlayer: TwelveJanggiPlayer,
+  alpha: number,
+  beta: number,
+): number {
+  if (state.winner) {
+    return state.winner === rootPlayer ? 1_000_000 + depth * 10_000 : -1_000_000 - depth * 10_000;
+  }
+
+  const moves = listTwelveJanggiLegalMoves(state);
+  if (moves.length === 0) {
+    return state.currentPlayer === rootPlayer ? -900_000 - depth * 10_000 : 900_000 + depth * 10_000;
+  }
+
+  if (depth === 0) {
+    return evaluateTwelveJanggiState(state, rootPlayer);
+  }
+
+  const maximizing = state.currentPlayer === rootPlayer;
+  const orderedMoves = orderTwelveJanggiMoves(state, moves, rootPlayer);
+
+  if (maximizing) {
+    let value = Number.NEGATIVE_INFINITY;
+    for (const move of orderedMoves) {
+      const next = applyTwelveJanggiComputerMove(state, move);
+      if (!next) continue;
+      value = Math.max(value, twelveJanggiMinimax(next, depth - 1, rootPlayer, alpha, beta));
+      alpha = Math.max(alpha, value);
+      if (alpha >= beta) break;
+    }
+    return value;
+  }
+
+  let value = Number.POSITIVE_INFINITY;
+  for (const move of orderedMoves) {
+    const next = applyTwelveJanggiComputerMove(state, move);
+    if (!next) continue;
+    value = Math.min(value, twelveJanggiMinimax(next, depth - 1, rootPlayer, alpha, beta));
+    beta = Math.min(beta, value);
+    if (alpha >= beta) break;
+  }
+  return value;
+}
+
+function evaluateTwelveJanggiState(
+  state: TwelveJanggiState,
+  rootPlayer: TwelveJanggiPlayer,
+): number {
+  if (state.winner) {
+    return state.winner === rootPlayer ? 1_000_000 : -1_000_000;
+  }
+
+  const opponent = twelveJanggiOpponentOf(rootPlayer);
+  let score = 0;
+  let rootKing: TwelveJanggiSquare | null = null;
+  let opponentKing: TwelveJanggiSquare | null = null;
+
+  for (let row = 0; row < BOARD_ROWS; row += 1) {
+    for (let col = 0; col < BOARD_COLS; col += 1) {
+      const piece = state.board[row][col];
+      if (!piece) continue;
+      const square = { row, col };
+      const sign = piece.owner === rootPlayer ? 1 : -1;
+      score += sign * twelveJanggiPieceValue(piece.kind);
+      score += sign * twelveJanggiAdvancementBonus(piece.owner, piece.kind, square);
+      score += sign * twelveJanggiCentralityBonus(square);
+      if (piece.kind === "king") {
+        if (piece.owner === rootPlayer) rootKing = square;
+        else opponentKing = square;
+      }
+    }
+  }
+
+  score += state.capturedHands[rootPlayer].reduce((total, kind) => total + twelveJanggiPieceValue(kind) * 0.72, 0);
+  score -= state.capturedHands[opponent].reduce((total, kind) => total + twelveJanggiPieceValue(kind) * 0.72, 0);
+
+  const rootMobility = listTwelveJanggiLegalMoves({ ...state, currentPlayer: rootPlayer }).length;
+  const opponentMobility = listTwelveJanggiLegalMoves({ ...state, currentPlayer: opponent }).length;
+  score += (rootMobility - opponentMobility) * 18;
+
+  const rootAttacks = twelveJanggiAttackedSquares(state, rootPlayer);
+  const opponentAttacks = twelveJanggiAttackedSquares(state, opponent);
+  if (opponentKing && rootAttacks.some((square) => sameTwelveJanggiSquare(square, opponentKing))) {
+    score += 850;
+  }
+  if (rootKing && opponentAttacks.some((square) => sameTwelveJanggiSquare(square, rootKing))) {
+    score -= 950;
+  }
+
+  if (state.pendingKingTerritoryThreat) {
+    score += state.pendingKingTerritoryThreat.player === rootPlayer ? 1_400 : -1_600;
+  }
+
+  return score;
+}
+
+function twelveJanggiAttackedSquares(
+  state: TwelveJanggiState,
+  player: TwelveJanggiPlayer,
+): TwelveJanggiSquare[] {
+  const attackState = { ...state, currentPlayer: player, winner: null };
+  const attacks: TwelveJanggiSquare[] = [];
+  for (let row = 0; row < BOARD_ROWS; row += 1) {
+    for (let col = 0; col < BOARD_COLS; col += 1) {
+      const piece = state.board[row][col];
+      if (piece?.owner === player) {
+        attacks.push(...getTwelveJanggiLegalMoves(attackState, { row, col }));
+      }
+    }
+  }
+  return attacks;
+}
+
+function twelveJanggiAdvancementBonus(
+  player: TwelveJanggiPlayer,
+  kind: TwelveJanggiPieceKind,
+  square: TwelveJanggiSquare,
+): number {
+  if (kind === "king") {
+    return isTwelveJanggiOpponentTerritory(player, square) ? 500 : 0;
+  }
+  if (kind === "man") {
+    return player === "A" ? (BOARD_ROWS - 1 - square.row) * 90 : square.row * 90;
+  }
+  if (kind === "feudalLord") {
+    return player === "A" ? (BOARD_ROWS - 1 - square.row) * 40 : square.row * 40;
+  }
+  return player === "A" ? (BOARD_ROWS - 1 - square.row) * 14 : square.row * 14;
+}
+
+function twelveJanggiCentralityBonus(square: TwelveJanggiSquare): number {
+  return 24 - Math.abs(square.col - 1) * 12 - Math.abs(square.row - 1.5) * 4;
+}
+
+function twelveJanggiPositionBonus(
+  state: TwelveJanggiState,
+  rootPlayer: TwelveJanggiPlayer,
+): number {
+  return evaluateTwelveJanggiState({ ...state, pendingKingTerritoryThreat: state.pendingKingTerritoryThreat }, rootPlayer) / 50;
 }
 
 export function selectChessComputerMove({

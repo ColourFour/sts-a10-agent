@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyMove as applyXoMove, createBoard, listLegalMoves as listXoLegalMoves } from "../xoGame";
 import { createInitialTwelveJanggiState } from "./twelve-janggi/twelveJanggiEngine";
+import type { Board, GameState, PieceKind, Player } from "./twelve-janggi/twelveJanggiRules";
 import { Chess } from "chess.js";
 import {
   applyDomineeringMove,
@@ -30,6 +31,34 @@ import {
   type CellOwner,
   type DomineeringPlayer,
 } from "./boardGameOpponents";
+
+function emptyTwelveJanggiBoard(): Board {
+  return Array.from({ length: 4 }, () => Array.from({ length: 3 }, () => null));
+}
+
+function twelveJanggiPiece(owner: Player, kind: PieceKind, id = `${owner}-${kind}`) {
+  return { owner, kind, id };
+}
+
+function customTwelveJanggiState(
+  board: Board,
+  currentPlayer: Player,
+  extra?: Partial<GameState>,
+): GameState {
+  return {
+    ...createInitialTwelveJanggiState(),
+    board,
+    currentPlayer,
+    capturedHands: { A: [], B: [] },
+    pendingKingTerritoryThreat: null,
+    winner: null,
+    selectedSquare: null,
+    selectedCapturedPiece: null,
+    legalTargets: [],
+    nextPieceId: 1,
+    ...extra,
+  };
+}
 
 describe("board game opponent selectors", () => {
   it("returns only legal XO moves and does not mutate the input board", () => {
@@ -134,6 +163,47 @@ describe("board game opponent selectors", () => {
     expect(listTwelveJanggiLegalMoves(state)).toContainEqual(move);
     expect(applyTwelveJanggiComputerMove(state, move!)).not.toBeNull();
     expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("Twelve Janggi normal search takes an immediate King capture", () => {
+    const board = emptyTwelveJanggiBoard();
+    board[1][1] = twelveJanggiPiece("B", "general", "B-general");
+    board[2][1] = twelveJanggiPiece("A", "king", "A-target-king");
+    board[3][2] = twelveJanggiPiece("B", "king", "B-king");
+    const state = customTwelveJanggiState(board, "B");
+
+    const move = selectTwelveJanggiComputerMove({ state, difficulty: "normal" });
+    const result = move ? applyTwelveJanggiComputerMove(state, move) : null;
+
+    expect(move).toMatchObject({ type: "move", to: { row: 2, col: 1 } });
+    expect(result?.winner).toBe("B");
+  });
+
+  it("Twelve Janggi normal search does not leave its King open to an immediate capture", () => {
+    const board = emptyTwelveJanggiBoard();
+    board[1][1] = twelveJanggiPiece("B", "king", "B-king");
+    board[2][1] = twelveJanggiPiece("A", "general", "A-general");
+    board[3][2] = twelveJanggiPiece("A", "king", "A-king");
+    board[3][0] = twelveJanggiPiece("B", "man", "B-man");
+    const state = customTwelveJanggiState(board, "B");
+
+    const move = selectTwelveJanggiComputerMove({ state, difficulty: "normal" });
+    const result = move ? applyTwelveJanggiComputerMove(state, move) : null;
+    const bKingSquare = result?.board.flatMap((row, rowIndex) =>
+      row.flatMap((piece, colIndex) => piece?.owner === "B" && piece.kind === "king" ? [{ row: rowIndex, col: colIndex }] : []),
+    )[0];
+    const opponentReplies = result ? listTwelveJanggiLegalMoves({ ...result, currentPlayer: "A" }) : [];
+
+    expect(move).not.toBeNull();
+    expect(bKingSquare).toBeTruthy();
+    expect(
+      opponentReplies.some(
+        (reply) =>
+          reply.type === "move" &&
+          reply.to.row === bKingSquare!.row &&
+          reply.to.col === bKingSquare!.col,
+      ),
+    ).toBe(false);
   });
 
   it("returns legal chess moves and null when no legal move exists", () => {

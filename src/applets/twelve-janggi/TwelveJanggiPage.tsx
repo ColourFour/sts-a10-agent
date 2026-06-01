@@ -149,7 +149,7 @@ export function TwelveJanggiPage() {
     createInitialTwelveJanggiState(),
   );
   const [gameMode, setGameMode] = useState<GameMode>("twoPlayer");
-  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("normal");
+  const [difficulty, setDifficulty] = useState<OpponentDifficulty>("hard");
   const [computerThinking, setComputerThinking] = useState(false);
   const [message, setMessage] = useState(
     "Player A starts. Select a piece to see legal moves.",
@@ -380,6 +380,7 @@ export function TwelveJanggiPage() {
                 <select value={difficulty} onChange={(event) => setDifficulty(event.target.value as OpponentDifficulty)}>
                   <option value="easy">Easy</option>
                   <option value="normal">Normal</option>
+                  <option value="hard">Hard</option>
                 </select>
               </label>
             ) : null}
