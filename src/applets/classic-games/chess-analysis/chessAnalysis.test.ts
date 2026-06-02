@@ -1,14 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ChessComApiGame } from "./chessComApi";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
 import { extractPlayerMovePositions } from "./chessPgnPositionExtraction";
-import { buildAnalysisCacheKey, rankCriticalMoves } from "./chessSelectedDayAnalysis";
-import type { CriticalMoveAnalysis, NormalizedChessGame } from "./chessReportTypes";
+import { buildAnalysisCacheKey, defaultSelectedDayAnalysisSettings, rankCriticalMoves, writeCachedDailyAnalysis } from "./chessSelectedDayAnalysis";
+import type { CriticalMoveAnalysis, DailyEngineAnalysisReport, NormalizedChessGame } from "./chessReportTypes";
+import { buildWeeklyAnalysisCacheKey, buildWeeklyReport, getAvailableWeeks, getMostRecentWeek } from "./chessWeeklyReport";
 
 const dayOneMorning = Date.UTC(2026, 5, 2, 12, 0, 0) / 1000;
 const dayOneAfternoon = Date.UTC(2026, 5, 2, 14, 0, 0) / 1000;
 const dayTwo = Date.UTC(2026, 5, 3, 12, 0, 0) / 1000;
+const nextWeek = Date.UTC(2026, 5, 8, 12, 0, 0) / 1000;
 
 function game(overrides: Partial<ChessComApiGame>): ChessComApiGame {
   return {
@@ -31,6 +33,21 @@ function game(overrides: Partial<ChessComApiGame>): ChessComApiGame {
     ...overrides,
   };
 }
+
+function installLocalStorageMock() {
+  const store = new Map<string, string>();
+  (globalThis as typeof globalThis & { window?: unknown }).window = {
+    localStorage: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+      removeItem: (key: string) => store.delete(key),
+    },
+  };
+}
+
+afterEach(() => {
+  delete (globalThis as typeof globalThis & { window?: unknown }).window;
+});
 
 describe("Chess.com game normalization", () => {
   it("normalizes rated blitz and rapid games for either player color", () => {
@@ -158,5 +175,101 @@ describe("selected-day analysis helpers", () => {
         username: "TestPlayer",
       }),
     ).toContain("testplayer.2026-06-02.g3.m18.t400.a|b");
+  });
+});
+
+describe("weekly chess reports", () => {
+  it("selects available weeks and aggregates fetched data plus cached engine analysis", () => {
+    installLocalStorageMock();
+    const games = normalizeChessComGames(
+      [
+        game({ end_time: dayOneMorning, url: "https://www.chess.com/game/live/w1", white: { rating: 1500, result: "win", username: "TestPlayer" } }),
+        game({ end_time: dayOneAfternoon, url: "https://www.chess.com/game/live/w2", white: { rating: 1512, result: "agreed", username: "TestPlayer" } }),
+        game({
+          end_time: dayTwo,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/w3",
+          white: { rating: 1600, result: "timeout", username: "TestPlayer" },
+          black: { rating: 1500, result: "win", username: "Opponent" },
+        }),
+        game({
+          end_time: nextWeek,
+          url: "https://www.chess.com/game/live/w4",
+          white: { rating: 1520, result: "win", username: "TestPlayer" },
+        }),
+      ],
+      "TestPlayer",
+    );
+    const summaries = summarizeDailyChessGames(games);
+    const weekKey = "2026-06-01";
+    const cachedDay = summaries.find((summary) => summary.date === "2026-06-02");
+    expect(cachedDay).toBeTruthy();
+    const cacheKey = buildWeeklyAnalysisCacheKey({
+      date: cachedDay!.date,
+      day: cachedDay!,
+      username: "TestPlayer",
+    });
+    const cachedReport: DailyEngineAnalysisReport = {
+      analyzedGameUrls: cachedDay!.games.slice(0, defaultSelectedDayAnalysisSettings.maxGames).map((cachedGame) => cachedGame.gameUrl),
+      cacheKey,
+      completedAt: "2026-06-02T12:00:00.000Z",
+      criticalMoves: [
+        {
+          bestMove: "e2e4",
+          centipawnLoss: 320,
+          evalAfter: { type: "cp", value: -250 },
+          evalBefore: { type: "cp", value: 70 },
+          fenAfter: "after",
+          fenBefore: "before",
+          gameUrl: "https://www.chess.com/game/live/w1",
+          mateSwing: null,
+          moveNumber: 1,
+          playedMove: "b4",
+          playedMoveUci: "b2b4",
+          playerColor: "white",
+          sideToMove: "white",
+        },
+      ],
+      homeworkPuzzles: [
+        {
+          bestMove: "e2e4",
+          centipawnLoss: 320,
+          explanation: "Find the best move.",
+          fen: "before",
+          gameUrl: "https://www.chess.com/game/live/w1",
+          playedMove: "b4",
+          sideToMove: "white",
+        },
+      ],
+      incomplete: false,
+      settings: defaultSelectedDayAnalysisSettings,
+      skippedGames: [],
+      source: "stockfish-lite-single",
+    };
+    writeCachedDailyAnalysis(cacheKey, cachedReport);
+
+    const report = buildWeeklyReport({ days: summaries, username: "TestPlayer", weekKey });
+
+    expect(getAvailableWeeks(summaries)).toEqual(["2026-06-08", "2026-06-01"]);
+    expect(getMostRecentWeek(summaries)).toBe("2026-06-08");
+    expect(report.timeClassSummaries.blitz).toMatchObject({
+      finalRating: 1512,
+      firstKnownRating: 1500,
+      gamesPlayed: 2,
+      netChange: 12,
+      wins: 1,
+      draws: 1,
+    });
+    expect(report.timeClassSummaries.rapid).toMatchObject({
+      gamesPlayed: 1,
+      losses: 1,
+      netChange: 0,
+    });
+    expect(report.bestDay).toEqual({ date: "2026-06-02", netChange: 12 });
+    expect(report.engineAnalyzedDayCount).toBe(1);
+    expect(report.engineAnalyzedGameCount).toBe(2);
+    expect(report.missingAnalysisDates).toEqual(["2026-06-03"]);
+    expect(report.topCriticalMoves[0].centipawnLoss).toBe(320);
+    expect(report.themeCounts[0]).toEqual({ count: 1, label: "blunder / major eval loss" });
   });
 });

@@ -13,6 +13,15 @@ import {
   type SelectedDayAnalysisProgress,
 } from "./chessSelectedDayAnalysis";
 import { createStockfishEngine, type ChessStockfishEngine } from "./chessStockfishEngine";
+import {
+  buildWeeklyReport,
+  formatWeeklyReportMarkdown,
+  getAvailableWeeks,
+  getMostRecentWeek,
+  getWeekLabel,
+  type WeeklyReport,
+  type WeeklyTimeClassSummary,
+} from "./chessWeeklyReport";
 import type {
   ChessComTrackedTimeClass,
   CriticalMoveAnalysis,
@@ -191,7 +200,145 @@ function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] })
   );
 }
 
-function SelectedDayReview({ day, username }: { day: DailyChessSummary; username: string }) {
+function WeeklyTimeClassCard({ summary }: { summary: WeeklyTimeClassSummary }) {
+  return (
+    <article className="weekly-summary-card">
+      <div className="card-topline">
+        <h3>{summary.timeClass}</h3>
+        <span className={`rating-delta ${summary.netChange && summary.netChange > 0 ? "positive" : summary.netChange && summary.netChange < 0 ? "negative" : ""}`}>
+          {formatNetChange(summary.netChange)}
+        </span>
+      </div>
+      <div className="chess-analysis-metrics">
+        <SummaryMetric label="games" value={summary.gamesPlayed} />
+        <SummaryMetric label="first" value={formatRating(summary.firstKnownRating)} />
+        <SummaryMetric label="final" value={formatRating(summary.finalRating)} />
+        <SummaryMetric label="W-L-D" value={`${summary.wins}-${summary.losses}-${summary.draws}`} />
+      </div>
+    </article>
+  );
+}
+
+function WeeklyReportPanel({
+  onSelectDay,
+  report,
+  selectedWeek,
+  setSelectedWeek,
+  weeks,
+}: {
+  onSelectDay: (date: string) => void;
+  report: WeeklyReport;
+  selectedWeek: string;
+  setSelectedWeek: (week: string) => void;
+  weeks: string[];
+}) {
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const missingSelectedDay = report.missingAnalysisDates[0] ?? null;
+
+  async function copyMarkdown() {
+    setCopyStatus(null);
+    try {
+      await navigator.clipboard.writeText(formatWeeklyReportMarkdown(report));
+      setCopyStatus("Copied weekly report Markdown.");
+    } catch {
+      setCopyStatus("Could not copy Markdown in this browser.");
+    }
+  }
+
+  return (
+    <section className="weekly-report-panel" aria-label="Weekly Report">
+      <div className="weekly-report-header">
+        <div>
+          <p className="eyebrow">Weekly Report</p>
+          <h2>{getWeekLabel(report.weekKey)}</h2>
+          <p className="helper-text">
+            Fetched game and rating data covers every loaded blitz/rapid game in this week. Engine-analyzed data comes only from cached selected-day Stockfish runs.
+          </p>
+        </div>
+        <label className="field weekly-selector">
+          <span>Week</span>
+          <select value={selectedWeek} onChange={(event) => setSelectedWeek(event.target.value)}>
+            {weeks.map((week) => (
+              <option key={week} value={week}>
+                {getWeekLabel(week)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="weekly-summary-grid">
+        <WeeklyTimeClassCard summary={report.timeClassSummaries.blitz} />
+        <WeeklyTimeClassCard summary={report.timeClassSummaries.rapid} />
+        <article className="weekly-summary-card">
+          <h3>Best day</h3>
+          <strong>{report.bestDay ? formatDateLabel(report.bestDay.date) : "n/a"}</strong>
+          <p>{report.bestDay ? formatNetChange(report.bestDay.netChange) : "No rating movement found."}</p>
+        </article>
+        <article className="weekly-summary-card">
+          <h3>Worst day</h3>
+          <strong>{report.worstDay ? formatDateLabel(report.worstDay.date) : "n/a"}</strong>
+          <p>{report.worstDay ? formatNetChange(report.worstDay.netChange) : "No rating movement found."}</p>
+        </article>
+      </div>
+      <div className="weekly-coverage-row">
+        <span>Fetched game/rating data: {report.days.length} active day(s)</span>
+        <span>Engine-analyzed data: {report.engineAnalyzedDayCount}/{report.days.length} day(s)</span>
+        <span>Stockfish-analyzed games: {report.engineAnalyzedGameCount}</span>
+      </div>
+      {report.missingAnalysisDates.length > 0 ? (
+        <div className="weekly-missing-analysis">
+          <strong>Missing analysis:</strong>
+          <span>{report.missingAnalysisDates.map(formatDateLabel).join(", ")}</span>
+          {missingSelectedDay ? (
+            <button className="secondary-button" onClick={() => onSelectDay(missingSelectedDay)} type="button">
+              Analyze selected day first
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="helper-text">Every loaded day in this week has cached selected-day engine analysis.</p>
+      )}
+      <div className="weekly-report-columns">
+        <section className="analysis-placeholder-panel">
+          <h3>Recurring issue labels</h3>
+          {report.themeCounts.length > 0 ? (
+            <ul className="skipped-game-list">
+              {report.themeCounts.map((theme) => (
+                <li key={theme.label}>{theme.label}: {theme.count}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="helper-text">Uncategorized critical move. Analyze days first for basic labels.</p>
+          )}
+        </section>
+        <section className="analysis-placeholder-panel">
+          <h3>Top weekly critical moments</h3>
+          <CriticalMoveList moves={report.topCriticalMoves} />
+        </section>
+        <section className="analysis-placeholder-panel">
+          <h3>Weekly homework</h3>
+          <HomeworkPuzzleList puzzles={report.homeworkPuzzles} />
+        </section>
+      </div>
+      <div className="chess-analysis-actions">
+        <button className="secondary-button" onClick={copyMarkdown} type="button">
+          Copy Markdown report
+        </button>
+        {copyStatus ? <span className="helper-text">{copyStatus}</span> : null}
+      </div>
+    </section>
+  );
+}
+
+function SelectedDayReview({
+  day,
+  onAnalysisReport,
+  username,
+}: {
+  day: DailyChessSummary;
+  onAnalysisReport: () => void;
+  username: string;
+}) {
   const engineRef = useRef<ChessStockfishEngine | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [analysisReport, setAnalysisReport] = useState<DailyEngineAnalysisReport | null>(null);
@@ -239,6 +386,7 @@ function SelectedDayReview({ day, username }: { day: DailyChessSummary; username
         username,
       });
       setAnalysisReport(report);
+      onAnalysisReport();
     } catch (error) {
       setAnalysisError(
         error instanceof Error
@@ -362,9 +510,23 @@ export function ChessComAnalysisPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedUsername, setLoadedUsername] = useState("");
+  const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
+  const [analysisRevision, setAnalysisRevision] = useState(0);
 
   const summaries = useMemo(() => summarizeDailyChessGames(games), [games]);
   const selectedDay = summaries.find((summary) => summary.date === selectedDate) ?? summaries[0] ?? null;
+  const availableWeeks = useMemo(() => getAvailableWeeks(summaries), [summaries]);
+  const weeklyReport = useMemo(() => {
+    if (!loadedUsername || !selectedWeek) {
+      return null;
+    }
+
+    return buildWeeklyReport({
+      days: summaries,
+      username: loadedUsername,
+      weekKey: selectedWeek,
+    });
+  }, [analysisRevision, loadedUsername, selectedWeek, summaries]);
 
   useEffect(() => {
     if (!selectedDate && summaries.length > 0) {
@@ -373,6 +535,16 @@ export function ChessComAnalysisPanel() {
       setSelectedDate(summaries[0].date);
     }
   }, [selectedDate, summaries]);
+
+  useEffect(() => {
+    const mostRecentWeek = getMostRecentWeek(summaries);
+    if (!mostRecentWeek) {
+      setSelectedWeek(null);
+      return;
+    }
+
+    setSelectedWeek((currentWeek) => currentWeek && availableWeeks.includes(currentWeek) ? currentWeek : mostRecentWeek);
+  }, [availableWeeks, summaries]);
 
   async function loadGames(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
@@ -394,6 +566,7 @@ export function ChessComAnalysisPanel() {
       setGames(normalizedGames);
       setLoadedUsername(trimmedUsername);
       setSelectedDate(normalizedGames.at(-1)?.endDate ?? null);
+      setAnalysisRevision((revision) => revision + 1);
       saveLastChessComUsername(trimmedUsername);
     } catch (fetchError) {
       setGames([]);
@@ -470,7 +643,22 @@ export function ChessComAnalysisPanel() {
               />
             ))}
           </div>
-          {selectedDay ? <SelectedDayReview day={selectedDay} username={loadedUsername} /> : null}
+          {weeklyReport ? (
+            <WeeklyReportPanel
+              onSelectDay={(date) => setSelectedDate(date)}
+              report={weeklyReport}
+              selectedWeek={selectedWeek ?? weeklyReport.weekKey}
+              setSelectedWeek={setSelectedWeek}
+              weeks={availableWeeks}
+            />
+          ) : null}
+          {selectedDay ? (
+            <SelectedDayReview
+              day={selectedDay}
+              onAnalysisReport={() => setAnalysisRevision((revision) => revision + 1)}
+              username={loadedUsername}
+            />
+          ) : null}
         </>
       ) : null}
     </section>

@@ -36,7 +36,7 @@ export type WeeklyIssueTheme = {
 
 export type WeeklyReport = {
   analyzedDays: DailyEngineAnalysisReport[];
-  availableAnalysisDays: string[];
+  analyzedDates: string[];
   bestDay: WeeklyRatingDay | null;
   dateRange: {
     end: string;
@@ -124,7 +124,7 @@ function summarizeDailyNetChange(day: DailyChessSummary): WeeklyRatingDay | null
     const timeClassSummary = day.byTimeClass[timeClass];
     return total + (timeClassSummary?.netChange ?? 0);
   }, 0);
-  const hasAnyRating = timeClasses.some((timeClass) => day.byTimeClass[timeClass]?.netChange !== null);
+  const hasAnyRating = timeClasses.some((timeClass) => day.byTimeClass[timeClass]?.netChange != null);
 
   return hasAnyRating ? { date: day.date, netChange } : null;
 }
@@ -165,6 +165,18 @@ export function getWeekLabel(weekKey: string): string {
   return `${weekKey} to ${addDays(weekKey, 6)}`;
 }
 
+function formatRating(value: number | null): string {
+  return value === null ? "n/a" : `${value}`;
+}
+
+function formatNetChange(value: number | null): string {
+  if (value === null) {
+    return "n/a";
+  }
+
+  return value > 0 ? `+${value}` : `${value}`;
+}
+
 export function buildWeeklyAnalysisCacheKey({
   date,
   day,
@@ -195,15 +207,14 @@ export function buildWeeklyReport({
   const weekDays = days
     .filter((day) => day.date >= weekKey && day.date <= weekEnd)
     .sort((left, right) => left.date.localeCompare(right.date));
-  const analyzedDays = weekDays
-    .map((day) => readCachedDailyAnalysis(buildWeeklyAnalysisCacheKey({ date: day.date, day, username })))
-    .filter((report): report is DailyEngineAnalysisReport => Boolean(report));
-  const availableAnalysisDays = new Set(analyzedDays.map((report) => report.completedAt ? report.analyzedGameUrls.join("|") : ""));
-  const analyzedDates = new Set(
-    weekDays
-      .filter((day) => readCachedDailyAnalysis(buildWeeklyAnalysisCacheKey({ date: day.date, day, username })))
-      .map((day) => day.date),
-  );
+  const analyzedEntries = weekDays
+    .map((day) => ({
+      date: day.date,
+      report: readCachedDailyAnalysis(buildWeeklyAnalysisCacheKey({ date: day.date, day, username })),
+    }))
+    .filter((entry): entry is { date: string; report: DailyEngineAnalysisReport } => Boolean(entry.report));
+  const analyzedDays = analyzedEntries.map((entry) => entry.report);
+  const analyzedDates = new Set(analyzedEntries.map((entry) => entry.date));
   const dailyNetChanges = weekDays
     .map(summarizeDailyNetChange)
     .filter((day): day is WeeklyRatingDay => Boolean(day));
@@ -216,7 +227,7 @@ export function buildWeeklyReport({
 
   return {
     analyzedDays,
-    availableAnalysisDays: [...availableAnalysisDays].filter(Boolean),
+    analyzedDates: [...analyzedDates],
     bestDay: dailyNetChanges.length > 0 ? [...dailyNetChanges].sort((left, right) => right.netChange - left.netChange)[0] : null,
     dateRange: {
       end: weekEnd,
@@ -238,3 +249,39 @@ export function buildWeeklyReport({
   };
 }
 
+export function formatWeeklyReportMarkdown(report: WeeklyReport): string {
+  const blitz = report.timeClassSummaries.blitz;
+  const rapid = report.timeClassSummaries.rapid;
+  const lines = [
+    `# Chess.com Weekly Report: ${getWeekLabel(report.weekKey)}`,
+    "",
+    "## Fetched Game / Rating Data",
+    `- Blitz: ${blitz.gamesPlayed} games, ${blitz.wins}-${blitz.losses}-${blitz.draws}, ${formatRating(blitz.firstKnownRating)} to ${formatRating(blitz.finalRating)} (${formatNetChange(blitz.netChange)})`,
+    `- Rapid: ${rapid.gamesPlayed} games, ${rapid.wins}-${rapid.losses}-${rapid.draws}, ${formatRating(rapid.firstKnownRating)} to ${formatRating(rapid.finalRating)} (${formatNetChange(rapid.netChange)})`,
+    `- Best day: ${report.bestDay ? `${report.bestDay.date} (${formatNetChange(report.bestDay.netChange)})` : "n/a"}`,
+    `- Worst day: ${report.worstDay ? `${report.worstDay.date} (${formatNetChange(report.worstDay.netChange)})` : "n/a"}`,
+    "",
+    "## Engine Analysis Coverage",
+    `- Analyzed days: ${report.engineAnalyzedDayCount}/${report.days.length}`,
+    `- Stockfish-analyzed games: ${report.engineAnalyzedGameCount}`,
+    `- Missing analysis: ${report.missingAnalysisDates.length > 0 ? report.missingAnalysisDates.join(", ") : "none"}`,
+    "",
+    "## Top Critical Moments",
+    ...(report.topCriticalMoves.length > 0
+      ? report.topCriticalMoves.map(
+          (move, index) =>
+            `${index + 1}. ${move.playedMove} on move ${move.moveNumber}: best ${move.bestMove}, loss ${Math.round(move.centipawnLoss)} cp (${move.gameUrl})`,
+        )
+      : ["No cached engine analysis yet."]),
+    "",
+    "## Homework",
+    ...(report.homeworkPuzzles.length > 0
+      ? report.homeworkPuzzles.map(
+          (puzzle, index) =>
+            `${index + 1}. Find the best move for ${puzzle.sideToMove}: ${puzzle.bestMove}. FEN: ${puzzle.fen}`,
+        )
+      : ["Analyze at least one day to generate homework candidates."]),
+  ];
+
+  return lines.join("\n");
+}
