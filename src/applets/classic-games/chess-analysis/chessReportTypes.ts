@@ -75,6 +75,20 @@ export type EngineEvaluation =
       value: number;
     };
 
+export type MoveImpactSeverity = "minor" | "inaccuracy" | "mistake" | "major" | "blunder" | "mate";
+
+export type MoveImpactClassification = {
+  label: string;
+  severity: MoveImpactSeverity;
+  theme:
+    | "blunder"
+    | "major eval loss"
+    | "missed win"
+    | "missed mate"
+    | "missed best move"
+    | "small improvement";
+};
+
 export type ExtractedMovePosition = {
   gameUrl: string;
   moveNumber: number;
@@ -91,6 +105,7 @@ export type CriticalMoveAnalysis = ExtractedMovePosition & {
   evalBefore: EngineEvaluation;
   evalAfter: EngineEvaluation;
   centipawnLoss: number;
+  impact: MoveImpactClassification;
   mateSwing: number | null;
   incomplete?: boolean;
 };
@@ -101,8 +116,18 @@ export type HomeworkPuzzleCandidate = {
   explanation: string;
   fen: string;
   gameUrl: string;
+  impact: MoveImpactClassification;
   playedMove: string;
   sideToMove: ChessPlayerColor;
+};
+
+export type GameAnalysisStatus = {
+  analyzedMoveCount: number;
+  candidateMoveCount: number;
+  criticalMoveCount: number;
+  gameUrl: string;
+  reason?: string;
+  status: "analyzed" | "partial" | "skipped";
 };
 
 export type DailyEngineAnalysisReport = {
@@ -110,9 +135,11 @@ export type DailyEngineAnalysisReport = {
   cacheKey: string;
   completedAt: string;
   criticalMoves: CriticalMoveAnalysis[];
+  gameStatuses: GameAnalysisStatus[];
   homeworkPuzzles: HomeworkPuzzleCandidate[];
   incomplete: boolean;
   settings: {
+    depth: number;
     maxGames: number;
     maxMoves: number;
     moveTimeMs: number;

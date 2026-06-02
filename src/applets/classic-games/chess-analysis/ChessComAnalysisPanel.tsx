@@ -11,6 +11,7 @@ import {
   analyzeSelectedDayGames,
   defaultSelectedDayAnalysisSettings,
   type SelectedDayAnalysisProgress,
+  type SelectedDayAnalysisSettings,
 } from "./chessSelectedDayAnalysis";
 import { createStockfishEngine, type ChessStockfishEngine } from "./chessStockfishEngine";
 import {
@@ -103,6 +104,23 @@ function formatEvaluation(evaluation: EngineEvaluation): string {
 
 function formatCentipawnLoss(value: number): string {
   return `${Math.round(value)} cp`;
+}
+
+function clampAnalysisSetting(key: keyof SelectedDayAnalysisSettings, value: number): number {
+  const limits: Record<keyof SelectedDayAnalysisSettings, { max: number; min: number }> = {
+    depth: { max: 18, min: 1 },
+    maxGames: { max: 8, min: 1 },
+    maxMoves: { max: 60, min: 1 },
+    moveTimeMs: { max: 3000, min: 100 },
+  };
+  const limit = limits[key];
+  const fallback = defaultSelectedDayAnalysisSettings[key];
+
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(limit.max, Math.max(limit.min, Math.round(value)));
 }
 
 function parseFenBoard(fen: string): string[][] {
@@ -324,6 +342,9 @@ function CriticalMoveList({ moves }: { moves: CriticalMoveAnalysis[] }) {
               </strong>
               <span>{formatCentipawnLoss(move.centipawnLoss)}</span>
             </div>
+            <span className={`impact-pill impact-${move.impact?.severity ?? "minor"}`}>
+              {move.impact?.label ?? "Engine improvement"}
+            </span>
             <p>
               Position before the move. Played {move.playedMoveUci}; correct move {move.bestMove}.
             </p>
@@ -351,6 +372,9 @@ function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] })
           <FenBoard bestMove={puzzle.bestMove} fen={puzzle.fen} orientation={puzzle.sideToMove} />
           <div className="analysis-card-copy">
             <strong>Find the best move for {puzzle.sideToMove}.</strong>
+            <span className={`impact-pill impact-${puzzle.impact?.severity ?? "minor"}`}>
+              {puzzle.impact?.label ?? "Engine improvement"}
+            </span>
             <p>
               Played: {puzzle.playedMove}. Correct move: {puzzle.bestMove}.
             </p>
@@ -383,12 +407,14 @@ function WeeklyTimeClassCard({ summary }: { summary: WeeklyTimeClassSummary }) {
 }
 
 function WeeklyReportPanel({
+  analysisSettings,
   onSelectDay,
   report,
   selectedWeek,
   setSelectedWeek,
   weeks,
 }: {
+  analysisSettings: SelectedDayAnalysisSettings;
   onSelectDay: (date: string) => void;
   report: WeeklyReport;
   selectedWeek: string;
@@ -416,6 +442,7 @@ function WeeklyReportPanel({
           <h2>{getWeekLabel(report.weekKey)}</h2>
           <p className="helper-text">
             Fetched game and rating data covers every loaded blitz/rapid game in this week. Engine-analyzed data comes only from cached selected-day Stockfish runs.
+            Current cache lookup: depth {analysisSettings.depth}, {analysisSettings.moveTimeMs}ms, {analysisSettings.maxGames} game(s), {analysisSettings.maxMoves} move(s).
           </p>
         </div>
         <label className="field weekly-selector">
@@ -496,11 +523,15 @@ function WeeklyReportPanel({
 }
 
 function SelectedDayReview({
+  analysisSettings,
   day,
+  onAnalysisSettingsChange,
   onAnalysisReport,
   username,
 }: {
+  analysisSettings: SelectedDayAnalysisSettings;
   day: DailyChessSummary;
+  onAnalysisSettingsChange: (settings: SelectedDayAnalysisSettings) => void;
   onAnalysisReport: () => void;
   username: string;
 }) {
@@ -518,7 +549,7 @@ function SelectedDayReview({
     abortControllerRef.current?.abort();
     engineRef.current?.stop();
     setAnalysisRunning(false);
-  }, [day.date]);
+  }, [analysisSettings.depth, analysisSettings.maxGames, analysisSettings.maxMoves, analysisSettings.moveTimeMs, day.date]);
 
   useEffect(() => {
     return () => {
@@ -547,6 +578,7 @@ function SelectedDayReview({
         engine: engineRef.current,
         games: day.games,
         onProgress: setProgress,
+        settings: analysisSettings,
         signal: abortController.signal,
         username,
       });
@@ -576,6 +608,14 @@ function SelectedDayReview({
 
   const progressValue =
     progress && progress.total > 0 ? `${Math.min(progress.current + 1, progress.total)} / ${progress.total}` : null;
+  const gameStatuses = new Map((analysisReport?.gameStatuses ?? []).map((status) => [status.gameUrl, status]));
+
+  function updateAnalysisSetting(key: keyof SelectedDayAnalysisSettings, value: number) {
+    onAnalysisSettingsChange({
+      ...analysisSettings,
+      [key]: clampAnalysisSetting(key, value),
+    });
+  }
 
   return (
     <section className="chess-daily-review" aria-label="Daily review">
@@ -583,11 +623,58 @@ function SelectedDayReview({
         <p className="eyebrow">Daily Review</p>
         <h2>{formatDateLabel(day.date)}</h2>
         <p className="helper-text">
-          Low-depth browser Stockfish is coaching-grade, not master-level truth. This analyzes up to{" "}
-          {defaultSelectedDayAnalysisSettings.maxGames} recent games and{" "}
-          {defaultSelectedDayAnalysisSettings.maxMoves} of your moves for the selected day. Stockfish is provided under
+          Browser Stockfish is coaching-grade, not master-level truth. This analyzes up to{" "}
+          {analysisSettings.maxGames} recent game(s) and{" "}
+          {analysisSettings.maxMoves} of your moves for the selected day. Stockfish is provided under
           GPLv3; license text is included at public/vendor/stockfish/Copying.txt.
         </p>
+        <div className="analysis-settings-grid" aria-label="Stockfish analysis settings">
+          <label className="field">
+            <span>Depth</span>
+            <input
+              disabled={analysisRunning}
+              max={18}
+              min={1}
+              type="number"
+              value={analysisSettings.depth}
+              onChange={(event) => updateAnalysisSetting("depth", Number(event.target.value))}
+            />
+          </label>
+          <label className="field">
+            <span>Time / position (ms)</span>
+            <input
+              disabled={analysisRunning}
+              max={3000}
+              min={100}
+              step={100}
+              type="number"
+              value={analysisSettings.moveTimeMs}
+              onChange={(event) => updateAnalysisSetting("moveTimeMs", Number(event.target.value))}
+            />
+          </label>
+          <label className="field">
+            <span>Max games</span>
+            <input
+              disabled={analysisRunning}
+              max={8}
+              min={1}
+              type="number"
+              value={analysisSettings.maxGames}
+              onChange={(event) => updateAnalysisSetting("maxGames", Number(event.target.value))}
+            />
+          </label>
+          <label className="field">
+            <span>Max player moves</span>
+            <input
+              disabled={analysisRunning}
+              max={60}
+              min={1}
+              type="number"
+              value={analysisSettings.maxMoves}
+              onChange={(event) => updateAnalysisSetting("maxMoves", Number(event.target.value))}
+            />
+          </label>
+        </div>
         <div className="chess-analysis-actions">
           <button className="secondary-button primary-action" disabled={analysisRunning} onClick={analyzeDay} type="button">
             Analyze selected day
@@ -595,7 +682,11 @@ function SelectedDayReview({
           <button className="secondary-button" disabled={!analysisRunning} onClick={stopAnalysis} type="button">
             Stop
           </button>
-          {analysisReport ? <span className="status-tag">Stockfish cached after run</span> : null}
+          {analysisReport ? (
+            <span className="status-tag">
+              Cached d{analysisReport.settings.depth} / {analysisReport.settings.moveTimeMs}ms
+            </span>
+          ) : null}
         </div>
         {progress ? (
           <p className="helper-text" role="status">
@@ -625,6 +716,12 @@ function SelectedDayReview({
                 <span>
                   {formatRating(game.playerRatingAfterGame)}
                 </span>
+                {gameStatuses.has(game.gameUrl) ? (
+                  <span className={`game-analysis-status status-${gameStatuses.get(game.gameUrl)?.status}`}>
+                    {gameStatuses.get(game.gameUrl)?.status}: {gameStatuses.get(game.gameUrl)?.analyzedMoveCount}/
+                    {gameStatuses.get(game.gameUrl)?.candidateMoveCount} moves
+                  </span>
+                ) : null}
               </div>
             ))}
           </div>
@@ -649,9 +746,20 @@ function SelectedDayReview({
           <h3>Weekly report summary</h3>
           <p>
             {analysisReport
-              ? `Analyzed ${analysisReport.analyzedGameUrls.length} game(s) with Stockfish 18 lite single-threaded. The weekly report above will use this cached analysis.`
-              : "Engine analysis not wired yet for weekly reports."}
+              ? `Analyzed ${analysisReport.analyzedGameUrls.length} game(s) with Stockfish 18 lite single-threaded at depth ${analysisReport.settings.depth}, ${analysisReport.settings.moveTimeMs}ms per position. The weekly report above will use this cached analysis when settings match.`
+              : "No matching cached engine analysis yet for these settings."}
           </p>
+          {analysisReport?.gameStatuses?.length ? (
+            <ul className="game-status-list">
+              {analysisReport.gameStatuses.map((status) => (
+                <li key={status.gameUrl}>
+                  <strong>{status.status}</strong>: {status.analyzedMoveCount}/{status.candidateMoveCount} moves,{" "}
+                  {status.criticalMoveCount} critical
+                  {status.reason ? ` - ${status.reason}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {analysisReport?.skippedGames.length ? (
             <ul className="skipped-game-list">
               {analysisReport.skippedGames.slice(0, 4).map((game, index) => (
@@ -677,6 +785,7 @@ export function ChessComAnalysisPanel() {
   const [loadedUsername, setLoadedUsername] = useState("");
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
   const [analysisRevision, setAnalysisRevision] = useState(0);
+  const [analysisSettings, setAnalysisSettings] = useState<SelectedDayAnalysisSettings>(defaultSelectedDayAnalysisSettings);
 
   const summaries = useMemo(() => summarizeDailyChessGames(games), [games]);
   const selectedDay = summaries.find((summary) => summary.date === selectedDate) ?? summaries[0] ?? null;
@@ -688,10 +797,11 @@ export function ChessComAnalysisPanel() {
 
     return buildWeeklyReport({
       days: summaries,
+      settings: analysisSettings,
       username: loadedUsername,
       weekKey: selectedWeek,
     });
-  }, [analysisRevision, loadedUsername, selectedWeek, summaries]);
+  }, [analysisRevision, analysisSettings, loadedUsername, selectedWeek, summaries]);
 
   useEffect(() => {
     if (!selectedDate && summaries.length > 0) {
@@ -810,6 +920,7 @@ export function ChessComAnalysisPanel() {
           </div>
           {weeklyReport ? (
             <WeeklyReportPanel
+              analysisSettings={analysisSettings}
               onSelectDay={(date) => setSelectedDate(date)}
               report={weeklyReport}
               selectedWeek={selectedWeek ?? weeklyReport.weekKey}
@@ -819,7 +930,9 @@ export function ChessComAnalysisPanel() {
           ) : null}
           {selectedDay ? (
             <SelectedDayReview
+              analysisSettings={analysisSettings}
               day={selectedDay}
+              onAnalysisSettingsChange={setAnalysisSettings}
               onAnalysisReport={() => setAnalysisRevision((revision) => revision + 1)}
               username={loadedUsername}
             />

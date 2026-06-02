@@ -1,6 +1,7 @@
 import type { EngineEvaluation } from "./chessReportTypes";
 
 export type StockfishAnalyzeOptions = {
+  depth?: number;
   moveTimeMs?: number;
   signal?: AbortSignal;
 };
@@ -19,6 +20,7 @@ export type ChessStockfishEngine = {
 };
 
 const defaultMoveTimeMs = 400;
+const defaultDepth = 10;
 
 function defaultEnginePath(): string {
   if (typeof document === "undefined") {
@@ -128,12 +130,13 @@ export function createStockfishEngine(enginePath = defaultEnginePath()): ChessSt
 
   async function analyzeFen(fen: string, options: StockfishAnalyzeOptions = {}): Promise<StockfishAnalysisResult> {
     await initialize();
+    const depth = options.depth ?? defaultDepth;
     const moveTimeMs = options.moveTimeMs ?? defaultMoveTimeMs;
     const rawInfo: string[] = [];
     let latestEvaluation: EngineEvaluation | null = null;
 
     const resultPromise = new Promise<StockfishAnalysisResult>((resolve, reject) => {
-      const cleanup = timeoutSignal(options.signal, Math.max(5000, moveTimeMs + 5000), () => {
+      const cleanup = timeoutSignal(options.signal, Math.max(7000, moveTimeMs + depth * 1200 + 5000), () => {
         listeners.delete(listener);
         stop();
         reject(options.signal?.aborted ? new Error("Analysis cancelled.") : new Error("Timed out waiting for best move."));
@@ -174,7 +177,7 @@ export function createStockfishEngine(enginePath = defaultEnginePath()): ChessSt
 
     post("ucinewgame");
     post(`position fen ${fen}`);
-    post(`go movetime ${moveTimeMs}`);
+    post(depth > 0 ? `go depth ${depth} movetime ${moveTimeMs}` : `go movetime ${moveTimeMs}`);
     return resultPromise;
   }
 

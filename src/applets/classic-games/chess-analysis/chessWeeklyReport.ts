@@ -11,6 +11,7 @@ import {
   defaultSelectedDayAnalysisSettings,
   rankCriticalMoves,
   readCachedDailyAnalysis,
+  type SelectedDayAnalysisSettings,
 } from "./chessSelectedDayAnalysis";
 
 export type WeeklyTimeClassSummary = {
@@ -31,7 +32,7 @@ export type WeeklyRatingDay = {
 
 export type WeeklyIssueTheme = {
   count: number;
-  label: "blunder / major eval loss" | "missed engine best move" | "uncategorized critical move";
+  label: "blunder" | "major eval loss" | "missed win" | "missed mate" | "missed best move" | "small improvement";
 };
 
 export type WeeklyReport = {
@@ -130,15 +131,27 @@ function summarizeDailyNetChange(day: DailyChessSummary): WeeklyRatingDay | null
 }
 
 function classifyTheme(move: CriticalMoveAnalysis): WeeklyIssueTheme["label"] {
-  if (move.centipawnLoss >= 300 || move.mateSwing !== null) {
-    return "blunder / major eval loss";
+  if (move.impact?.theme) {
+    return move.impact.theme;
+  }
+
+  if (move.mateSwing !== null) {
+    return "missed mate";
+  }
+
+  if (move.centipawnLoss >= 600) {
+    return "blunder";
+  }
+
+  if (move.centipawnLoss >= 300) {
+    return "major eval loss";
   }
 
   if (move.bestMove && move.bestMove !== move.playedMoveUci) {
-    return "missed engine best move";
+    return "missed best move";
   }
 
-  return "uncategorized critical move";
+  return "small improvement";
 }
 
 function summarizeThemes(moves: CriticalMoveAnalysis[]): WeeklyIssueTheme[] {
@@ -180,26 +193,30 @@ function formatNetChange(value: number | null): string {
 export function buildWeeklyAnalysisCacheKey({
   date,
   day,
+  settings = defaultSelectedDayAnalysisSettings,
   username,
 }: {
   date: string;
   day: DailyChessSummary;
+  settings?: SelectedDayAnalysisSettings;
   username: string;
 }): string {
   return buildAnalysisCacheKey({
     date,
-    gameUrls: day.games.slice(0, defaultSelectedDayAnalysisSettings.maxGames).map((game) => game.gameUrl),
-    settings: defaultSelectedDayAnalysisSettings,
+    gameUrls: day.games.slice(0, settings.maxGames).map((game) => game.gameUrl),
+    settings,
     username,
   });
 }
 
 export function buildWeeklyReport({
   days,
+  settings = defaultSelectedDayAnalysisSettings,
   username,
   weekKey,
 }: {
   days: DailyChessSummary[];
+  settings?: SelectedDayAnalysisSettings;
   username: string;
   weekKey: string;
 }): WeeklyReport {
@@ -210,7 +227,7 @@ export function buildWeeklyReport({
   const analyzedEntries = weekDays
     .map((day) => ({
       date: day.date,
-      report: readCachedDailyAnalysis(buildWeeklyAnalysisCacheKey({ date: day.date, day, username })),
+      report: readCachedDailyAnalysis(buildWeeklyAnalysisCacheKey({ date: day.date, day, settings, username })),
     }))
     .filter((entry): entry is { date: string; report: DailyEngineAnalysisReport } => Boolean(entry.report));
   const analyzedDays = analyzedEntries.map((entry) => entry.report);
@@ -264,13 +281,14 @@ export function formatWeeklyReportMarkdown(report: WeeklyReport): string {
     "## Engine Analysis Coverage",
     `- Analyzed days: ${report.engineAnalyzedDayCount}/${report.days.length}`,
     `- Stockfish-analyzed games: ${report.engineAnalyzedGameCount}`,
+    `- Settings: ${report.analyzedDays[0] ? `depth ${report.analyzedDays[0].settings.depth}, ${report.analyzedDays[0].settings.moveTimeMs}ms, ${report.analyzedDays[0].settings.maxGames} game(s), ${report.analyzedDays[0].settings.maxMoves} move(s)` : "no cached engine analysis"}`,
     `- Missing analysis: ${report.missingAnalysisDates.length > 0 ? report.missingAnalysisDates.join(", ") : "none"}`,
     "",
     "## Top Critical Moments",
     ...(report.topCriticalMoves.length > 0
       ? report.topCriticalMoves.map(
           (move, index) =>
-            `${index + 1}. ${move.playedMove} on move ${move.moveNumber}: best ${move.bestMove}, loss ${Math.round(move.centipawnLoss)} cp`,
+            `${index + 1}. ${move.impact?.label ?? "Engine improvement"}: ${move.playedMove} on move ${move.moveNumber}, best ${move.bestMove}, loss ${Math.round(move.centipawnLoss)} cp`,
         )
       : ["No cached engine analysis yet."]),
     "",

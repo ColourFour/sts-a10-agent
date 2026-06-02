@@ -3,7 +3,13 @@ import type { ChessComApiGame } from "./chessComApi";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
 import { extractPlayerMovePositions } from "./chessPgnPositionExtraction";
-import { buildAnalysisCacheKey, defaultSelectedDayAnalysisSettings, rankCriticalMoves, writeCachedDailyAnalysis } from "./chessSelectedDayAnalysis";
+import {
+  buildAnalysisCacheKey,
+  classifyMoveImpact,
+  defaultSelectedDayAnalysisSettings,
+  rankCriticalMoves,
+  writeCachedDailyAnalysis,
+} from "./chessSelectedDayAnalysis";
 import type { CriticalMoveAnalysis, DailyEngineAnalysisReport, NormalizedChessGame } from "./chessReportTypes";
 import { buildWeeklyAnalysisCacheKey, buildWeeklyReport, getAvailableWeeks, getMostRecentWeek } from "./chessWeeklyReport";
 
@@ -45,7 +51,7 @@ function installLocalStorageMock() {
         },
         clear: () => store.clear(),
         key: (index: number) => [...store.keys()][index] ?? null,
-      getItem: (key: string) => store.get(key) ?? null,
+        getItem: (key: string) => store.get(key) ?? null,
         removeItem: (key: string) => {
           store.delete(key);
         },
@@ -172,6 +178,7 @@ describe("selected-day analysis helpers", () => {
       evalBefore: { type: "cp", value: 100 },
       fenAfter: "after",
       fenBefore: "before",
+      impact: { label: "Inaccuracy", severity: "inaccuracy", theme: "missed best move" },
       mateSwing: null,
       playerColor: "white",
       sideToMove: "white",
@@ -183,10 +190,18 @@ describe("selected-day analysis helpers", () => {
       buildAnalysisCacheKey({
         date: "2026-06-02",
         gameUrls: ["a", "b"],
-        settings: { maxGames: 3, maxMoves: 18, moveTimeMs: 400 },
+        settings: { depth: 10, maxGames: 3, maxMoves: 18, moveTimeMs: 400 },
         username: "TestPlayer",
       }),
-    ).toContain("testplayer.2026-06-02.g3.m18.t400.a|b");
+    ).toContain("testplayer.2026-06-02.g3.m18.d10.t400.a|b");
+    expect(
+      classifyMoveImpact({
+        centipawnLoss: 360,
+        evalAfter: { type: "cp", value: 20 },
+        evalBefore: { type: "cp", value: 380 },
+        mateSwing: null,
+      }),
+    ).toMatchObject({ label: "Missed winning advantage", theme: "missed win" });
   });
 });
 
@@ -234,12 +249,22 @@ describe("weekly chess reports", () => {
           fenAfter: "after",
           fenBefore: "before",
           gameUrl: "https://www.chess.com/game/live/w1",
+          impact: { label: "Major evaluation loss", severity: "major", theme: "major eval loss" },
           mateSwing: null,
           moveNumber: 1,
           playedMove: "b4",
           playedMoveUci: "b2b4",
           playerColor: "white",
           sideToMove: "white",
+        },
+      ],
+      gameStatuses: [
+        {
+          analyzedMoveCount: 2,
+          candidateMoveCount: 2,
+          criticalMoveCount: 1,
+          gameUrl: "https://www.chess.com/game/live/w1",
+          status: "analyzed",
         },
       ],
       homeworkPuzzles: [
@@ -249,6 +274,7 @@ describe("weekly chess reports", () => {
           explanation: "Find the best move.",
           fen: "before",
           gameUrl: "https://www.chess.com/game/live/w1",
+          impact: { label: "Major evaluation loss", severity: "major", theme: "major eval loss" },
           playedMove: "b4",
           sideToMove: "white",
         },
@@ -282,6 +308,6 @@ describe("weekly chess reports", () => {
     expect(report.engineAnalyzedGameCount).toBe(2);
     expect(report.missingAnalysisDates).toEqual(["2026-06-03"]);
     expect(report.topCriticalMoves[0].centipawnLoss).toBe(320);
-    expect(report.themeCounts[0]).toEqual({ count: 1, label: "blunder / major eval loss" });
+    expect(report.themeCounts[0]).toEqual({ count: 1, label: "major eval loss" });
   });
 });

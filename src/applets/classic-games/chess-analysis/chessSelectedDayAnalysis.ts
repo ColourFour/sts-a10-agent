@@ -3,13 +3,16 @@ import type {
   DailyEngineAnalysisReport,
   EngineEvaluation,
   ExtractedMovePosition,
+  GameAnalysisStatus,
   HomeworkPuzzleCandidate,
+  MoveImpactClassification,
   NormalizedChessGame,
 } from "./chessReportTypes";
 import type { ChessStockfishEngine } from "./chessStockfishEngine";
 import { extractPlayerMovePositions } from "./chessPgnPositionExtraction";
 
 export type SelectedDayAnalysisSettings = {
+  depth: number;
   maxGames: number;
   maxMoves: number;
   moveTimeMs: number;
@@ -22,12 +25,13 @@ export type SelectedDayAnalysisProgress = {
 };
 
 export const defaultSelectedDayAnalysisSettings: SelectedDayAnalysisSettings = {
+  depth: 10,
   maxGames: 3,
   maxMoves: 18,
   moveTimeMs: 400,
 };
 
-const cachePrefix = "sts2.chessComAnalysis.stockfish.v2";
+const cachePrefix = "sts2.chessComAnalysis.stockfish.v3";
 const mateCentipawn = 100000;
 
 function canUseLocalStorage(): boolean {
@@ -59,11 +63,15 @@ function mateSwing(before: EngineEvaluation, after: EngineEvaluation): number | 
 }
 
 function explainPuzzle(criticalMove: CriticalMoveAnalysis): string {
-  if (criticalMove.mateSwing !== null) {
-    return "Find the best move. The played move changed the mating outlook in low-depth browser analysis.";
+  if (criticalMove.impact.theme === "missed mate") {
+    return "Find the forcing move. Browser Stockfish saw a mating swing before the played move.";
   }
 
-  return `Find the best move. The played move lost about ${Math.round(criticalMove.centipawnLoss)} centipawns in low-depth browser analysis.`;
+  if (criticalMove.impact.theme === "missed win") {
+    return "Find the move that keeps the winning advantage. The played move gave back a large part of the edge.";
+  }
+
+  return `Find the best move. ${criticalMove.impact.label} in browser Stockfish analysis, about ${Math.round(criticalMove.centipawnLoss)} centipawns.`;
 }
 
 function createHomeworkPuzzle(criticalMove: CriticalMoveAnalysis): HomeworkPuzzleCandidate {
@@ -73,6 +81,7 @@ function createHomeworkPuzzle(criticalMove: CriticalMoveAnalysis): HomeworkPuzzl
     explanation: explainPuzzle(criticalMove),
     fen: criticalMove.fenBefore,
     gameUrl: criticalMove.gameUrl,
+    impact: criticalMove.impact,
     playedMove: criticalMove.playedMove,
     sideToMove: criticalMove.sideToMove,
   };
@@ -80,10 +89,67 @@ function createHomeworkPuzzle(criticalMove: CriticalMoveAnalysis): HomeworkPuzzl
 
 function normalizeSettings(settings: Partial<SelectedDayAnalysisSettings> = {}): SelectedDayAnalysisSettings {
   return {
-    maxGames: settings.maxGames ?? defaultSelectedDayAnalysisSettings.maxGames,
-    maxMoves: settings.maxMoves ?? defaultSelectedDayAnalysisSettings.maxMoves,
-    moveTimeMs: settings.moveTimeMs ?? defaultSelectedDayAnalysisSettings.moveTimeMs,
+    depth: clampWholeNumber(settings.depth, 1, 18, defaultSelectedDayAnalysisSettings.depth),
+    maxGames: clampWholeNumber(settings.maxGames, 1, 8, defaultSelectedDayAnalysisSettings.maxGames),
+    maxMoves: clampWholeNumber(settings.maxMoves, 1, 60, defaultSelectedDayAnalysisSettings.maxMoves),
+    moveTimeMs: clampWholeNumber(settings.moveTimeMs, 100, 3000, defaultSelectedDayAnalysisSettings.moveTimeMs),
   };
+}
+
+function clampWholeNumber(value: number | undefined, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.round(value ?? fallback)));
+}
+
+export function classifyMoveImpact({
+  centipawnLoss,
+  evalAfter,
+  evalBefore,
+  mateSwing,
+}: {
+  centipawnLoss: number;
+  evalAfter: EngineEvaluation;
+  evalBefore: EngineEvaluation;
+  mateSwing: number | null;
+}): MoveImpactClassification {
+  if (mateSwing !== null && mateSwing > 0) {
+    return {
+      label: "Missed mate or mating defense",
+      severity: "mate",
+      theme: "missed mate",
+    };
+  }
+
+  const beforeCp = evaluationToPlayerCentipawns(evalBefore);
+  const afterCp = evaluationToPlayerCentipawns(evalAfter);
+  if (beforeCp >= 300 && afterCp < 150 && centipawnLoss >= 150) {
+    return {
+      label: "Missed winning advantage",
+      severity: centipawnLoss >= 300 ? "major" : "mistake",
+      theme: "missed win",
+    };
+  }
+
+  if (centipawnLoss >= 600) {
+    return { label: "Blunder", severity: "blunder", theme: "blunder" };
+  }
+
+  if (centipawnLoss >= 300) {
+    return { label: "Major evaluation loss", severity: "major", theme: "major eval loss" };
+  }
+
+  if (centipawnLoss >= 150) {
+    return { label: "Mistake", severity: "mistake", theme: "missed best move" };
+  }
+
+  if (centipawnLoss >= 75) {
+    return { label: "Inaccuracy", severity: "inaccuracy", theme: "missed best move" };
+  }
+
+  return { label: "Small improvement", severity: "minor", theme: "small improvement" };
 }
 
 export function buildAnalysisCacheKey({
@@ -103,6 +169,7 @@ export function buildAnalysisCacheKey({
     date,
     `g${settings.maxGames}`,
     `m${settings.maxMoves}`,
+    `d${settings.depth}`,
     `t${settings.moveTimeMs}`,
     gameUrls.join("|"),
   ].join(".");
@@ -170,18 +237,30 @@ export async function analyzeSelectedDayGames({
 
   const skippedGames: DailyEngineAnalysisReport["skippedGames"] = [];
   const candidates: ExtractedMovePosition[] = [];
+  const extractionCounts = new Map<string, number>();
+  const analysisCounts = new Map<string, number>();
+  const criticalCounts = new Map<string, number>();
+  const statusReasons = new Map<string, string>();
   for (const game of selectedGames) {
     try {
-      candidates.push(...extractPlayerMovePositions(game));
+      const positions = extractPlayerMovePositions(game);
+      extractionCounts.set(game.gameUrl, positions.length);
+      candidates.push(...positions);
     } catch (error) {
+      const reason = error instanceof Error ? error.message : "Could not parse PGN.";
+      statusReasons.set(game.gameUrl, reason);
       skippedGames.push({
         gameUrl: game.gameUrl,
-        reason: error instanceof Error ? error.message : "Could not parse PGN.",
+        reason,
       });
     }
   }
 
   const selectedCandidates = candidates.slice(0, normalizedSettings.maxMoves);
+  const selectedCandidateCounts = selectedCandidates.reduce((counts, candidate) => {
+    counts.set(candidate.gameUrl, (counts.get(candidate.gameUrl) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
   const criticalMoves: CriticalMoveAnalysis[] = [];
   onProgress?.({ current: 0, message: "Initializing Stockfish.", total: selectedCandidates.length });
   await engine.initialize();
@@ -199,10 +278,12 @@ export async function analyzeSelectedDayGames({
 
     try {
       const before = await engine.analyzeFen(candidate.fenBefore, {
+        depth: normalizedSettings.depth,
         moveTimeMs: normalizedSettings.moveTimeMs,
         signal,
       });
       const after = await engine.analyzeFen(candidate.fenAfter, {
+        depth: normalizedSettings.depth,
         moveTimeMs: normalizedSettings.moveTimeMs,
         signal,
       });
@@ -211,6 +292,17 @@ export async function analyzeSelectedDayGames({
       const evalBefore = evaluationToPlayerCentipawns(evalBeforeFromPlayer);
       const evalAfter = evaluationToPlayerCentipawns(evalAfterFromPlayer);
       const centipawnLoss = Math.max(0, evalBefore - evalAfter);
+      const moveMateSwing = mateSwing(evalBeforeFromPlayer, evalAfterFromPlayer);
+      const impact = classifyMoveImpact({
+        centipawnLoss,
+        evalAfter: evalAfterFromPlayer,
+        evalBefore: evalBeforeFromPlayer,
+        mateSwing: moveMateSwing,
+      });
+      analysisCounts.set(candidate.gameUrl, (analysisCounts.get(candidate.gameUrl) ?? 0) + 1);
+      if (impact.severity !== "minor") {
+        criticalCounts.set(candidate.gameUrl, (criticalCounts.get(candidate.gameUrl) ?? 0) + 1);
+      }
 
       criticalMoves.push({
         ...candidate,
@@ -218,26 +310,62 @@ export async function analyzeSelectedDayGames({
         centipawnLoss,
         evalAfter: evalAfterFromPlayer,
         evalBefore: evalBeforeFromPlayer,
-        mateSwing: mateSwing(evalBeforeFromPlayer, evalAfterFromPlayer),
+        impact,
+        mateSwing: moveMateSwing,
       });
     } catch (error) {
       if (signal?.aborted) {
+        statusReasons.set(candidate.gameUrl, "Analysis stopped.");
         break;
       }
 
+      const reason = error instanceof Error ? error.message : "Could not analyze position.";
+      statusReasons.set(candidate.gameUrl, reason);
       skippedGames.push({
         gameUrl: candidate.gameUrl,
-        reason: error instanceof Error ? error.message : "Could not analyze position.",
+        reason,
       });
     }
   }
 
-  const rankedCriticalMoves = rankCriticalMoves(criticalMoves).slice(0, 5);
+  const rankedCriticalMoves = rankCriticalMoves(criticalMoves)
+    .filter((move) => move.impact.severity !== "minor")
+    .slice(0, 5);
+  const gameStatuses: GameAnalysisStatus[] = selectedGames.map((game) => {
+    const candidateMoveCount = selectedCandidateCounts.get(game.gameUrl) ?? 0;
+    const extractedMoveCount = extractionCounts.get(game.gameUrl) ?? 0;
+    const analyzedMoveCount = analysisCounts.get(game.gameUrl) ?? 0;
+    const criticalMoveCount = criticalCounts.get(game.gameUrl) ?? 0;
+    const reason = statusReasons.get(game.gameUrl);
+    let status: GameAnalysisStatus["status"] = "analyzed";
+
+    if (candidateMoveCount === 0 || analyzedMoveCount === 0) {
+      status = "skipped";
+    } else if (analyzedMoveCount < candidateMoveCount || reason) {
+      status = "partial";
+    }
+
+    return {
+      analyzedMoveCount,
+      candidateMoveCount,
+      criticalMoveCount,
+      gameUrl: game.gameUrl,
+      reason:
+        reason ??
+        (candidateMoveCount === 0 && extractedMoveCount > 0
+          ? "Move cap reached before this game."
+          : candidateMoveCount === 0
+            ? "No tracked player moves found."
+            : undefined),
+      status,
+    };
+  });
   const report: DailyEngineAnalysisReport = {
     analyzedGameUrls: selectedGames.map((game) => game.gameUrl),
     cacheKey,
     completedAt: new Date().toISOString(),
     criticalMoves: rankedCriticalMoves,
+    gameStatuses,
     homeworkPuzzles: rankedCriticalMoves.map(createHomeworkPuzzle),
     incomplete: Boolean(signal?.aborted) || skippedGames.length > 0 || selectedCandidates.length === 0,
     settings: normalizedSettings,
