@@ -270,7 +270,7 @@ export function formatWeeklyReportMarkdown(report: WeeklyReport): string {
     ...(report.topCriticalMoves.length > 0
       ? report.topCriticalMoves.map(
           (move, index) =>
-            `${index + 1}. ${move.playedMove} on move ${move.moveNumber}: best ${move.bestMove}, loss ${Math.round(move.centipawnLoss)} cp (${move.gameUrl})`,
+            `${index + 1}. ${move.playedMove} on move ${move.moveNumber}: best ${move.bestMove}, loss ${Math.round(move.centipawnLoss)} cp`,
         )
       : ["No cached engine analysis yet."]),
     "",

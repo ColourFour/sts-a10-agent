@@ -2137,7 +2137,7 @@ h3 {
 
 .chess-analysis-days {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
 }
 
@@ -2221,7 +2221,8 @@ h3 {
 
 .chess-analysis-metrics strong {
   color: var(--text);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
 }
 
 .chess-daily-review {
@@ -2231,6 +2232,101 @@ h3 {
   border: 1px solid rgba(232, 220, 200, 0.14);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.weekly-report-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(240, 198, 111, 0.22);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(240, 198, 111, 0.09), rgba(255, 255, 255, 0.035)),
+    rgba(10, 13, 17, 0.34);
+}
+
+.weekly-report-header,
+.weekly-coverage-row,
+.weekly-missing-analysis {
+  display: flex;
+  align-items: center;
+}
+
+.weekly-report-header {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.weekly-selector {
+  min-width: min(100%, 260px);
+}
+
+.weekly-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.weekly-summary-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.weekly-summary-card h3 {
+  color: #f2cc7c;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.weekly-summary-card > strong {
+  color: var(--text);
+  font-size: 1.08rem;
+}
+
+.weekly-summary-card > p {
+  color: var(--muted);
+  line-height: 1.38;
+}
+
+.weekly-coverage-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.weekly-coverage-row span {
+  padding: 7px 9px;
+  border: 1px solid rgba(232, 220, 200, 0.16);
+  border-radius: 999px;
+  color: #f8ead2;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.weekly-missing-analysis {
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 11px;
+  border: 1px dashed rgba(255, 180, 168, 0.32);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255, 180, 168, 0.055);
+}
+
+.weekly-missing-analysis strong {
+  color: #ffdf96;
+}
+
+.weekly-report-columns {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.7fr) repeat(2, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 
 .chess-analysis-actions {
@@ -2262,6 +2358,8 @@ h3 {
 }
 
 .chess-game-row {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   min-height: 52px;
@@ -2309,6 +2407,171 @@ h3 {
   line-height: 1.42;
 }
 
+.rating-graph-panel,
+.daily-report-panel {
+  padding: 12px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 8px;
+  background: rgba(10, 13, 17, 0.48);
+}
+
+.rating-change-chart {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
+  align-items: end;
+  gap: 8px;
+  min-height: 160px;
+  margin-top: 10px;
+}
+
+.rating-change-bar-wrap {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 6px;
+  min-width: 0;
+  text-align: center;
+}
+
+.rating-change-value {
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.rating-change-track {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 96px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+}
+
+.rating-change-track::before {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  left: 6px;
+  height: 1px;
+  background: rgba(232, 220, 200, 0.18);
+  content: "";
+}
+
+.rating-change-bar {
+  position: relative;
+  z-index: 1;
+  width: 62%;
+  min-height: 4px;
+  border-radius: 5px 5px 0 0;
+  background: #d6dce5;
+}
+
+.rating-change-bar.positive {
+  background: linear-gradient(180deg, #8ff5bd, #2fb676);
+}
+
+.rating-change-bar.negative {
+  background: linear-gradient(180deg, #ffad9f, #d95c50);
+}
+
+.rating-change-date {
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.daily-report-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.daily-report-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.55fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.daily-report-row:hover {
+  border-color: rgba(232, 220, 200, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.daily-report-row strong {
+  color: var(--text);
+}
+
+.daily-report-row span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fen-board-wrap {
+  width: min(176px, 100%);
+}
+
+.fen-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid rgba(232, 220, 200, 0.24);
+  border-radius: 7px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.fen-square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  color: #161c21;
+  font-size: clamp(0.9rem, 2.1vw, 1.34rem);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.fen-square.light {
+  background: #d8c5a5;
+}
+
+.fen-square.dark {
+  background: #765a3b;
+}
+
+.fen-square.played::after,
+.fen-square.best::before {
+  position: absolute;
+  inset: 2px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  content: "";
+  pointer-events: none;
+}
+
+.fen-square.played::after {
+  border-color: rgba(255, 196, 85, 0.88);
+}
+
+.fen-square.best::before {
+  border-color: rgba(83, 221, 142, 0.9);
+}
+
 .critical-move-list,
 .homework-puzzle-list {
   padding-left: 0;
@@ -2318,11 +2581,19 @@ h3 {
 .critical-move-list li,
 .homework-puzzle-list li {
   display: grid;
-  gap: 7px;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 12px;
   padding: 10px;
   border: 1px solid rgba(232, 220, 200, 0.13);
   border-radius: 7px;
   background: rgba(10, 13, 17, 0.45);
+}
+
+.analysis-card-copy {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
 }
 
 .critical-move-list strong,
@@ -2335,17 +2606,7 @@ h3 {
   font-weight: 950;
 }
 
-.critical-move-list a,
-.homework-puzzle-list a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  width: fit-content;
-  color: #dcecff;
-  font-size: 0.86rem;
-  font-weight: 850;
-}
-
+.critical-move-list code,
 .homework-puzzle-list code {
   display: block;
   max-width: 100%;
@@ -2358,6 +2619,25 @@ h3 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+@media (max-width: 720px) {
+  .daily-report-row {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-report-row span:nth-child(2) {
+    white-space: normal;
+  }
+
+  .critical-move-list li,
+  .homework-puzzle-list li {
+    grid-template-columns: 1fr;
+  }
+
+  .fen-board-wrap {
+    width: min(220px, 100%);
+  }
 }
 
 .arcade-overlay {
@@ -3185,6 +3465,10 @@ h3 {
   .chess-review-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .weekly-report-columns {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -3206,7 +3490,8 @@ h3 {
   }
 
   .chess-analysis-header,
-  .chess-game-row {
+  .chess-game-row,
+  .weekly-report-header {
     align-items: stretch;
     flex-direction: column;
   }

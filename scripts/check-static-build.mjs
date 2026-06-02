@@ -13,6 +13,7 @@ const expectedRoutes = [
   "/applets/domineering",
   "/applets/konane",
   "/applets/chess",
+  "/applets/chess/analysis",
   "/applets/super-hexagon",
   "/applets/block-stack",
   "/applets/wing-dash",

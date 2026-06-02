@@ -1,4 +1,4 @@
-import { ExternalLink, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   fetchRecentChessComGames,
@@ -34,6 +34,21 @@ import type {
 } from "./chessReportTypes";
 
 const timeClasses: ChessComTrackedTimeClass[] = ["blitz", "rapid"];
+const boardFiles = ["a", "b", "c", "d", "e", "f", "g", "h"];
+const fenPieceGlyphs: Record<string, string> = {
+  B: "♗",
+  K: "♔",
+  N: "♘",
+  P: "♙",
+  Q: "♕",
+  R: "♖",
+  b: "♝",
+  k: "♚",
+  n: "♞",
+  p: "♟",
+  q: "♛",
+  r: "♜",
+};
 
 function formatRating(value: number | null): string {
   return value === null ? "n/a" : `${value}`;
@@ -88,6 +103,149 @@ function formatEvaluation(evaluation: EngineEvaluation): string {
 
 function formatCentipawnLoss(value: number): string {
   return `${Math.round(value)} cp`;
+}
+
+function parseFenBoard(fen: string): string[][] {
+  const placement = fen.split(" ")[0] ?? "";
+  return placement.split("/").map((rank) => {
+    const squares: string[] = [];
+    for (const char of rank) {
+      const emptyCount = Number(char);
+      if (Number.isInteger(emptyCount) && emptyCount > 0) {
+        squares.push(...Array(emptyCount).fill(""));
+      } else {
+        squares.push(char);
+      }
+    }
+    return squares;
+  });
+}
+
+function moveSquares(move: string): Set<string> {
+  if (!/^[a-h][1-8][a-h][1-8]/.test(move)) {
+    return new Set();
+  }
+
+  return new Set([move.slice(0, 2), move.slice(2, 4)]);
+}
+
+function dailyNetChange(day: DailyChessSummary): number | null {
+  const changes = timeClasses
+    .map((timeClass) => day.byTimeClass[timeClass]?.netChange)
+    .filter((value): value is number => value !== null && value !== undefined);
+
+  if (changes.length === 0) {
+    return null;
+  }
+
+  return changes.reduce((total, value) => total + value, 0);
+}
+
+function dailySummaryText(day: DailyChessSummary): string {
+  const parts = timeClasses
+    .map((timeClass) => day.byTimeClass[timeClass])
+    .filter((summary): summary is DailyTimeClassSummary => Boolean(summary))
+    .map(
+      (summary) =>
+        `${summary.timeClass}: ${summary.gamesPlayed} games, ${summary.wins}-${summary.losses}-${summary.draws}, ${formatNetChange(summary.netChange)}`,
+    );
+
+  return parts.length > 0 ? parts.join(" | ") : "No blitz or rapid games.";
+}
+
+function FenBoard({
+  bestMove,
+  fen,
+  orientation,
+  playedMove,
+}: {
+  bestMove?: string;
+  fen: string;
+  orientation: "black" | "white";
+  playedMove?: string;
+}) {
+  const rows = parseFenBoard(fen);
+  const orientedRows = orientation === "black" ? [...rows].reverse().map((row) => [...row].reverse()) : rows;
+  const highlightedPlayed = moveSquares(playedMove ?? "");
+  const highlightedBest = moveSquares(bestMove ?? "");
+
+  return (
+    <div className="fen-board-wrap" aria-label="Chess position">
+      <div className="fen-board">
+        {orientedRows.map((row, rowIndex) =>
+          row.map((piece, colIndex) => {
+            const rank = orientation === "black" ? rowIndex + 1 : 8 - rowIndex;
+            const file = orientation === "black" ? boardFiles[7 - colIndex] : boardFiles[colIndex];
+            const square = `${file}${rank}`;
+            const isPlayed = highlightedPlayed.has(square);
+            const isBest = highlightedBest.has(square);
+            return (
+              <span
+                aria-label={`${square}${piece ? ` ${piece}` : " empty"}`}
+                className={`fen-square ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${isPlayed ? "played" : ""} ${isBest ? "best" : ""}`}
+                key={`${square}-${rowIndex}-${colIndex}`}
+              >
+                {piece ? fenPieceGlyphs[piece] : ""}
+              </span>
+            );
+          }),
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RatingChangeGraph({ days }: { days: DailyChessSummary[] }) {
+  const orderedDays = [...days].sort((left, right) => left.date.localeCompare(right.date));
+  const values = orderedDays.map((day) => dailyNetChange(day) ?? 0);
+  const maxAbs = Math.max(1, ...values.map((value) => Math.abs(value)));
+
+  return (
+    <section className="rating-graph-panel" aria-label="Daily rating change graph">
+      <div>
+        <p className="eyebrow">Rating change graph</p>
+        <h3>Daily net movement</h3>
+      </div>
+      <div className="rating-change-chart">
+        {orderedDays.map((day) => {
+          const value = dailyNetChange(day) ?? 0;
+          const barHeight = Math.max(8, Math.round((Math.abs(value) / maxAbs) * 88));
+          return (
+            <div className="rating-change-bar-wrap" key={day.date}>
+              <span className="rating-change-value">{formatNetChange(value)}</span>
+              <div className="rating-change-track">
+                <span
+                  className={`rating-change-bar ${value >= 0 ? "positive" : "negative"}`}
+                  style={{ height: `${barHeight}px` }}
+                />
+              </div>
+              <span className="rating-change-date">{formatDateLabel(day.date)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DailySummaryReport({ days, onSelectDay }: { days: DailyChessSummary[]; onSelectDay: (date: string) => void }) {
+  return (
+    <section className="daily-report-panel" aria-label="Daily summary report">
+      <div>
+        <p className="eyebrow">Daily reports</p>
+        <h3>Brief day-by-day summary</h3>
+      </div>
+      <div className="daily-report-list">
+        {[...days].sort((left, right) => right.date.localeCompare(left.date)).map((day) => (
+          <button className="daily-report-row" key={day.date} onClick={() => onSelectDay(day.date)} type="button">
+            <strong>{formatDateLabel(day.date)}</strong>
+            <span>{dailySummaryText(day)}</span>
+            <strong>{formatNetChange(dailyNetChange(day))}</strong>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function SummaryMetric({ label, value }: { label: string; value: string | number }) {
@@ -158,19 +316,23 @@ function CriticalMoveList({ moves }: { moves: CriticalMoveAnalysis[] }) {
     <ol className="critical-move-list">
       {moves.map((move) => (
         <li key={`${move.gameUrl}-${move.moveNumber}-${move.playedMoveUci}`}>
-          <div className="card-topline">
-            <strong>
-              Move {move.moveNumber}: {move.playedMove}
-            </strong>
-            <span>{formatCentipawnLoss(move.centipawnLoss)}</span>
+          <FenBoard bestMove={move.bestMove} fen={move.fenBefore} orientation={move.sideToMove} playedMove={move.playedMoveUci} />
+          <div className="analysis-card-copy">
+            <div className="card-topline">
+              <strong>
+                Move {move.moveNumber}: {move.playedMove}
+              </strong>
+              <span>{formatCentipawnLoss(move.centipawnLoss)}</span>
+            </div>
+            <p>
+              Position before the move. Played {move.playedMoveUci}; correct move {move.bestMove}.
+            </p>
+            <p>
+              Player-perspective eval before {formatEvaluation(move.evalBefore)}, after played move{" "}
+              {formatEvaluation(move.evalAfter)}.
+            </p>
+            <code>{move.fenBefore}</code>
           </div>
-          <p>
-            Best move {move.bestMove}. Player-perspective eval before {formatEvaluation(move.evalBefore)}, after played move{" "}
-            {formatEvaluation(move.evalAfter)}.
-          </p>
-          <a href={move.gameUrl} rel="noreferrer" target="_blank">
-            Source game <ExternalLink size={13} aria-hidden="true" />
-          </a>
         </li>
       ))}
     </ol>
@@ -186,14 +348,15 @@ function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] })
     <ol className="homework-puzzle-list">
       {puzzles.map((puzzle) => (
         <li key={`${puzzle.gameUrl}-${puzzle.fen}`}>
-          <strong>Find the best move for {puzzle.sideToMove}.</strong>
-          <code>{puzzle.fen}</code>
-          <p>
-            Best: {puzzle.bestMove}. Played: {puzzle.playedMove}. {puzzle.explanation}
-          </p>
-          <a href={puzzle.gameUrl} rel="noreferrer" target="_blank">
-            Source game <ExternalLink size={13} aria-hidden="true" />
-          </a>
+          <FenBoard bestMove={puzzle.bestMove} fen={puzzle.fen} orientation={puzzle.sideToMove} />
+          <div className="analysis-card-copy">
+            <strong>Find the best move for {puzzle.sideToMove}.</strong>
+            <p>
+              Played: {puzzle.playedMove}. Correct move: {puzzle.bestMove}.
+            </p>
+            <p>{puzzle.explanation}</p>
+            <code>{puzzle.fen}</code>
+          </div>
         </li>
       ))}
     </ol>
@@ -280,6 +443,8 @@ function WeeklyReportPanel({
           <p>{report.worstDay ? formatNetChange(report.worstDay.netChange) : "No rating movement found."}</p>
         </article>
       </div>
+      <RatingChangeGraph days={report.days} />
+      <DailySummaryReport days={report.days} onSelectDay={onSelectDay} />
       <div className="weekly-coverage-row">
         <span>Fetched game/rating data: {report.days.length} active day(s)</span>
         <span>Engine-analyzed data: {report.engineAnalyzedDayCount}/{report.days.length} day(s)</span>
@@ -420,7 +585,8 @@ function SelectedDayReview({
         <p className="helper-text">
           Low-depth browser Stockfish is coaching-grade, not master-level truth. This analyzes up to{" "}
           {defaultSelectedDayAnalysisSettings.maxGames} recent games and{" "}
-          {defaultSelectedDayAnalysisSettings.maxMoves} of your moves for the selected day.
+          {defaultSelectedDayAnalysisSettings.maxMoves} of your moves for the selected day. Stockfish is provided under
+          GPLv3; license text is included at public/vendor/stockfish/Copying.txt.
         </p>
         <div className="chess-analysis-actions">
           <button className="secondary-button primary-action" disabled={analysisRunning} onClick={analyzeDay} type="button">
@@ -447,7 +613,7 @@ function SelectedDayReview({
           <h3>Recent games</h3>
           <div className="chess-game-list">
             {day.games.map((game) => (
-              <a className="chess-game-row" href={game.gameUrl} key={game.gameUrl} rel="noreferrer" target="_blank">
+              <div className="chess-game-row" key={game.gameUrl}>
                 <span>
                   <strong>{formatGameTime(game.endTimestamp)}</strong>
                   {game.timeClass} as {game.playerColor}
@@ -458,9 +624,8 @@ function SelectedDayReview({
                 </span>
                 <span>
                   {formatRating(game.playerRatingAfterGame)}
-                  <ExternalLink size={14} aria-hidden="true" />
                 </span>
-              </a>
+              </div>
             ))}
           </div>
         </section>
@@ -484,7 +649,7 @@ function SelectedDayReview({
           <h3>Weekly report summary</h3>
           <p>
             {analysisReport
-              ? `Analyzed ${analysisReport.analyzedGameUrls.length} game(s) with Stockfish 18 lite single-threaded. Weekly reports are not implemented in this pass.`
+              ? `Analyzed ${analysisReport.analyzedGameUrls.length} game(s) with Stockfish 18 lite single-threaded. The weekly report above will use this cached analysis.`
               : "Engine analysis not wired yet for weekly reports."}
           </p>
           {analysisReport?.skippedGames.length ? (

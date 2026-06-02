@@ -36,17 +36,29 @@ function game(overrides: Partial<ChessComApiGame>): ChessComApiGame {
 
 function installLocalStorageMock() {
   const store = new Map<string, string>();
-  (globalThis as typeof globalThis & { window?: unknown }).window = {
-    localStorage: {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        get length() {
+          return store.size;
+        },
+        clear: () => store.clear(),
+        key: (index: number) => [...store.keys()][index] ?? null,
       getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => store.set(key, value),
-      removeItem: (key: string) => store.delete(key),
+        removeItem: (key: string) => {
+          store.delete(key);
+        },
+        setItem: (key: string, value: string) => {
+          store.set(key, value);
+        },
+      } satisfies Storage,
     },
-  };
+  });
 }
 
 afterEach(() => {
-  delete (globalThis as typeof globalThis & { window?: unknown }).window;
+  Reflect.deleteProperty(globalThis, "window");
 });
 
 describe("Chess.com game normalization", () => {

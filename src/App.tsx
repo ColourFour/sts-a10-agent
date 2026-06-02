@@ -12,6 +12,7 @@ import {
 } from "./applets/arcade-games/ArcadeGamePages";
 import {
   AmazonsMiniPage,
+  ChessComAnalysisPage,
   ChessPage,
   DomineeringPage,
   HexPage,
@@ -84,6 +85,10 @@ export function App() {
 
   if (route === "/applets/chess") {
     return <ChessPage />;
+  }
+
+  if (route === "/applets/chess/analysis") {
+    return <ChessComAnalysisPage />;
   }
 
   if (route === "/applets/super-hexagon") {

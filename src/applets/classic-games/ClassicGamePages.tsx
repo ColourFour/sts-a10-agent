@@ -1712,6 +1712,9 @@ export function ChessPage() {
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
+          <a className="secondary-button wide" href="#/applets/chess/analysis">
+            Chess.com Analysis
+          </a>
           <SoloModeControls
             difficulty={difficulty}
             gameMode={gameMode}
@@ -1796,6 +1799,16 @@ export function ChessPage() {
           ]}
         />
       </section>
+    </AppletPageShell>
+  );
+}
+
+export function ChessComAnalysisPage() {
+  return (
+    <AppletPageShell
+      title="Chess.com Analysis"
+      subtitle="Load public Chess.com blitz and rapid games, review rating movement, and run selected-day browser Stockfish analysis."
+    >
       <ChessComAnalysisPanel />
     </AppletPageShell>
   );
