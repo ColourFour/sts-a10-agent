@@ -32,6 +32,7 @@ import {
   type Point,
 } from "../boardGameOpponents";
 import { getHighScores, recordHighScore, type HighScoreEntry } from "../gameScoring";
+import { ChessComAnalysisPanel } from "./chess-analysis/ChessComAnalysisPanel";
 import { isSuperHexagonCollision, normalizeAngle, type SuperHexagonWall } from "./superHexagonMath";
 
 function themeClass(title: string): string {
@@ -1795,6 +1796,7 @@ export function ChessPage() {
           ]}
         />
       </section>
+      <ChessComAnalysisPanel />
     </AppletPageShell>
   );
 }

@@ -895,7 +895,8 @@ h3 {
   font-weight: 800;
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   min-height: 44px;
   border: 1px solid rgba(232, 220, 200, 0.24);
@@ -906,7 +907,8 @@ h3 {
   outline: none;
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px rgba(240, 198, 111, 0.16);
 }
@@ -2070,6 +2072,294 @@ h3 {
     0 0 14px rgba(0, 0, 0, 0.3);
 }
 
+.chess-analysis-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--theme-accent), transparent 72%);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(16, 21, 31, 0.92);
+  box-shadow: var(--shadow);
+}
+
+.chess-analysis-header,
+.chess-analysis-form,
+.chess-analysis-loaded-note,
+.chess-game-row {
+  display: flex;
+  align-items: center;
+}
+
+.chess-analysis-header {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.chess-analysis-form {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.chess-analysis-form .field {
+  min-width: min(100%, 210px);
+}
+
+.chess-analysis-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.chess-analysis-checkbox input {
+  width: 18px;
+  aspect-ratio: 1;
+}
+
+.chess-analysis-loaded-note {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chess-analysis-loaded-note span {
+  padding: 7px 9px;
+  border: 1px solid rgba(232, 220, 200, 0.16);
+  border-radius: 999px;
+  color: #f8ead2;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.chess-analysis-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.chess-analysis-day {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  padding: 13px;
+  border: 1px solid rgba(232, 220, 200, 0.16);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+  text-align: left;
+}
+
+.chess-analysis-day.selected {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(240, 198, 111, 0.14);
+}
+
+.chess-analysis-day h3,
+.chess-daily-review h3,
+.analysis-placeholder-panel h3 {
+  font-size: 1rem;
+}
+
+.chess-analysis-day .card-topline span {
+  color: var(--subtle);
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.chess-analysis-day-classes {
+  display: grid;
+  gap: 8px;
+}
+
+.chess-analysis-time-card {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  background: rgba(10, 13, 17, 0.46);
+}
+
+.chess-analysis-time-card h4 {
+  margin: 0;
+  color: #f2cc7c;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.rating-delta {
+  color: #f8ead2;
+  font-weight: 950;
+}
+
+.rating-delta.positive {
+  color: #a8ffcf;
+}
+
+.rating-delta.negative {
+  color: #ffb4a8;
+}
+
+.chess-analysis-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.chess-analysis-metrics span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--subtle);
+  font-size: 0.76rem;
+}
+
+.chess-analysis-metrics strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.chess-daily-review {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chess-analysis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.chess-review-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(190px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.chess-review-grid > section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chess-game-list,
+.analysis-placeholder-panel ol,
+.skipped-game-list {
+  display: grid;
+  gap: 8px;
+}
+
+.chess-game-row {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(10, 13, 17, 0.52);
+  text-decoration: none;
+}
+
+.chess-game-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chess-game-row span:nth-child(2) {
+  flex: 1;
+}
+
+.chess-game-row strong {
+  color: var(--text);
+}
+
+.analysis-placeholder-panel {
+  padding: 12px;
+  border: 1px dashed rgba(232, 220, 200, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.analysis-placeholder-panel ol,
+.skipped-game-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.analysis-placeholder-panel p {
+  color: var(--muted);
+  line-height: 1.42;
+}
+
+.critical-move-list,
+.homework-puzzle-list {
+  padding-left: 0;
+  list-style: none;
+}
+
+.critical-move-list li,
+.homework-puzzle-list li {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 7px;
+  background: rgba(10, 13, 17, 0.45);
+}
+
+.critical-move-list strong,
+.homework-puzzle-list strong {
+  color: var(--text);
+}
+
+.critical-move-list .card-topline span {
+  color: #ffdf96;
+  font-weight: 950;
+}
+
+.critical-move-list a,
+.homework-puzzle-list a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  color: #dcecff;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.homework-puzzle-list code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 8px;
+  border: 1px solid rgba(232, 220, 200, 0.12);
+  border-radius: 6px;
+  color: #fff2d1;
+  background: rgba(0, 0, 0, 0.22);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
 .arcade-overlay {
   background:
     radial-gradient(circle, rgba(255, 79, 216, 0.24), rgba(8, 12, 22, 0.62) 58%, rgba(8, 12, 22, 0.2)),
@@ -2891,6 +3181,10 @@ h3 {
     min-height: auto;
     padding: 22px;
   }
+
+  .chess-review-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -2909,5 +3203,24 @@ h3 {
 
   .game-header::after {
     display: none;
+  }
+
+  .chess-analysis-header,
+  .chess-game-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chess-analysis-form .field,
+  .chess-analysis-form .secondary-button {
+    width: 100%;
+  }
+
+  .chess-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chess-analysis-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
