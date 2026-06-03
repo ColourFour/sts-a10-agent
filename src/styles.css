@@ -2417,6 +2417,105 @@ h3 {
   color: #ffdf96;
 }
 
+.weekly-analysis-queue {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.weekly-analysis-queue > .card-topline {
+  gap: 12px;
+  align-items: start;
+}
+
+.weekly-queue-actions,
+.weekly-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.weekly-analysis-status-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.weekly-analysis-status-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(150px, auto);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.12);
+  border-radius: 7px;
+  background: rgba(10, 13, 17, 0.36);
+}
+
+.weekly-analysis-status-row > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.weekly-analysis-status-row strong {
+  color: var(--text);
+}
+
+.weekly-analysis-status-row span,
+.weekly-analysis-status-row small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.analysis-status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(232, 220, 200, 0.16);
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.analysis-status-chip.status-cached-complete {
+  color: #a8ffcf;
+  background: rgba(47, 182, 118, 0.13);
+}
+
+.analysis-status-chip.status-cached-partial,
+.analysis-status-chip.status-in-progress {
+  color: #ffdf96;
+  background: rgba(240, 198, 111, 0.13);
+}
+
+.analysis-status-chip.status-failed {
+  color: #ffb4a8;
+  background: rgba(217, 92, 80, 0.14);
+}
+
+.analysis-status-chip.status-not-analyzed,
+.analysis-status-chip.status-skipped-no-games {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .weekly-report-columns {
   display: grid;
   grid-template-columns: 1fr;
@@ -2990,6 +3089,14 @@ h3 {
   .chess-analysis-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .weekly-analysis-status-row {
+    grid-template-columns: 1fr;
+  }
+
+  .weekly-status-actions {
+    justify-content: flex-start;
   }
 
   .critical-move-list li,

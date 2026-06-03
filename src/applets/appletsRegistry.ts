@@ -11,6 +11,15 @@ export type AppletRegistryEntry = {
 
 export const appletsRegistry: AppletRegistryEntry[] = [
   {
+    id: "chess-com-analysis",
+    title: "Chess.com Analysis",
+    description:
+      "Load public Chess.com games, review rating movement, and run browser Stockfish study queues.",
+    route: "/applets/chess-com-analysis",
+    status: "Playable Prototype",
+    tags: ["Chess", "Analysis", "Training"],
+  },
+  {
     id: "xo-game-lab",
     title: "XO Game Lab",
     description:

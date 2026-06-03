@@ -87,7 +87,7 @@ export function App() {
     return <ChessPage />;
   }
 
-  if (route === "/applets/chess/analysis") {
+  if (route === "/applets/chess-com-analysis" || route === "/applets/chess/analysis") {
     return <ChessComAnalysisPage />;
   }
 

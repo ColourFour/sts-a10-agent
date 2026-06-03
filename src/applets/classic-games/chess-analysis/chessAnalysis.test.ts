@@ -308,6 +308,11 @@ describe("weekly chess reports", () => {
       netChange: 0,
     });
     expect(report.bestDay).toEqual({ date: "2026-06-02", netChange: 12 });
+    expect(report.analysisCoverage).toMatchObject({
+      analyzedDayCount: 1,
+      totalDayCount: 2,
+    });
+    expect(report.analysisCoverage.days.map((day) => day.status)).toEqual(["cached_complete", "not_analyzed"]);
     expect(report.engineAnalyzedDayCount).toBe(1);
     expect(report.engineAnalyzedGameCount).toBe(2);
     expect(report.missingAnalysisDates).toEqual(["2026-06-03"]);

@@ -1,5 +1,6 @@
 import type {
   CriticalMoveAnalysis,
+  DailyAnalysisStatus,
   DailyEngineAnalysisReport,
   EngineEvaluation,
   ExtractedMovePosition,
@@ -175,6 +176,30 @@ export function buildAnalysisCacheKey({
   ].join(".");
 }
 
+export function buildDayAnalysisCacheKey({
+  date,
+  games,
+  settings,
+  username,
+}: {
+  date: string;
+  games: NormalizedChessGame[];
+  settings: SelectedDayAnalysisSettings;
+  username: string;
+}): string {
+  const normalizedSettings = normalizeSettings(settings);
+  return buildAnalysisCacheKey({
+    date,
+    gameUrls: games.slice(0, normalizedSettings.maxGames).map((game) => game.gameUrl),
+    settings: normalizedSettings,
+    username,
+  });
+}
+
+function buildAnalysisStatusKey(cacheKey: string): string {
+  return `${cacheKey}.status`;
+}
+
 export function readCachedDailyAnalysis(cacheKey: string): DailyEngineAnalysisReport | null {
   if (!canUseLocalStorage()) {
     return null;
@@ -198,6 +223,139 @@ export function writeCachedDailyAnalysis(cacheKey: string, report: DailyEngineAn
   } catch {
     // Analysis cache is helpful but not required.
   }
+}
+
+function countAnalyzedMoves(report: DailyEngineAnalysisReport): number {
+  return report.gameStatuses.reduce((total, gameStatus) => total + gameStatus.analyzedMoveCount, 0);
+}
+
+function statusFromReport(report: DailyEngineAnalysisReport, gameCount: number): DailyAnalysisStatus {
+  return {
+    analyzedGameCount: report.analyzedGameUrls.length,
+    analyzedMoveCount: countAnalyzedMoves(report),
+    cacheKey: report.cacheKey,
+    criticalMoveCount: report.criticalMoves.length,
+    date: report.completedAt.slice(0, 10),
+    gameCount,
+    lastAnalyzedAt: report.completedAt,
+    reason: report.incomplete ? "Analysis is incomplete. Some games, moves, or positions were skipped." : undefined,
+    settings: report.settings,
+    status: report.incomplete ? "cached_partial" : "cached_complete",
+  };
+}
+
+export function readStoredDailyAnalysisStatus(cacheKey: string): DailyAnalysisStatus | null {
+  if (!canUseLocalStorage()) {
+    return null;
+  }
+
+  try {
+    const value = window.localStorage.getItem(buildAnalysisStatusKey(cacheKey));
+    return value ? (JSON.parse(value) as DailyAnalysisStatus) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeDailyAnalysisStatus(cacheKey: string, status: DailyAnalysisStatus): void {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(buildAnalysisStatusKey(cacheKey), JSON.stringify(status));
+  } catch {
+    // Analysis status is helpful but not required.
+  }
+}
+
+export function summarizeCachedAnalysisStatus({
+  date,
+  games,
+  settings,
+  username,
+}: {
+  date: string;
+  games: NormalizedChessGame[];
+  settings: SelectedDayAnalysisSettings;
+  username: string;
+}): DailyAnalysisStatus {
+  const normalizedSettings = normalizeSettings(settings);
+  const cacheKey = buildDayAnalysisCacheKey({ date, games, settings: normalizedSettings, username });
+  if (games.length === 0) {
+    return {
+      analyzedGameCount: 0,
+      analyzedMoveCount: 0,
+      cacheKey,
+      criticalMoveCount: 0,
+      date,
+      gameCount: 0,
+      lastAnalyzedAt: null,
+      reason: "No games for the selected time control.",
+      settings: normalizedSettings,
+      status: "skipped_no_games",
+    };
+  }
+
+  const cached = readCachedDailyAnalysis(cacheKey);
+  if (cached) {
+    const status = {
+      ...statusFromReport(cached, games.length),
+      date,
+    };
+    writeDailyAnalysisStatus(cacheKey, status);
+    return status;
+  }
+
+  const stored = readStoredDailyAnalysisStatus(cacheKey);
+  if (stored) {
+    return {
+      ...stored,
+      date,
+      gameCount: games.length,
+    };
+  }
+
+  return {
+    analyzedGameCount: 0,
+    analyzedMoveCount: 0,
+    cacheKey,
+    criticalMoveCount: 0,
+    date,
+    gameCount: games.length,
+    lastAnalyzedAt: null,
+    settings: normalizedSettings,
+    status: "not_analyzed",
+  };
+}
+
+export function writeFailedDailyAnalysisStatus({
+  date,
+  games,
+  reason,
+  settings,
+  username,
+}: {
+  date: string;
+  games: NormalizedChessGame[];
+  reason: string;
+  settings: SelectedDayAnalysisSettings;
+  username: string;
+}): void {
+  const normalizedSettings = normalizeSettings(settings);
+  const cacheKey = buildDayAnalysisCacheKey({ date, games, settings: normalizedSettings, username });
+  writeDailyAnalysisStatus(cacheKey, {
+    analyzedGameCount: 0,
+    analyzedMoveCount: 0,
+    cacheKey,
+    criticalMoveCount: 0,
+    date,
+    gameCount: games.length,
+    lastAnalyzedAt: new Date().toISOString(),
+    reason,
+    settings: normalizedSettings,
+    status: "failed",
+  });
 }
 
 export function rankCriticalMoves(moves: CriticalMoveAnalysis[]): CriticalMoveAnalysis[] {
@@ -231,9 +389,25 @@ export async function analyzeSelectedDayGames({
   });
   const cached = readCachedDailyAnalysis(cacheKey);
   if (cached) {
+    writeDailyAnalysisStatus(cacheKey, {
+      ...statusFromReport(cached, selectedGames.length),
+      date,
+    });
     onProgress?.({ current: cached.criticalMoves.length, message: "Loaded cached analysis.", total: cached.criticalMoves.length });
     return cached;
   }
+
+  writeDailyAnalysisStatus(cacheKey, {
+    analyzedGameCount: 0,
+    analyzedMoveCount: 0,
+    cacheKey,
+    criticalMoveCount: 0,
+    date,
+    gameCount: selectedGames.length,
+    lastAnalyzedAt: null,
+    settings: normalizedSettings,
+    status: "in_progress",
+  });
 
   const skippedGames: DailyEngineAnalysisReport["skippedGames"] = [];
   const candidates: ExtractedMovePosition[] = [];
@@ -373,8 +547,12 @@ export async function analyzeSelectedDayGames({
     source: "stockfish-lite-single",
   };
 
-  if (!signal?.aborted && report.criticalMoves.length > 0) {
+  if (!signal?.aborted) {
     writeCachedDailyAnalysis(cacheKey, report);
+    writeDailyAnalysisStatus(cacheKey, {
+      ...statusFromReport(report, selectedGames.length),
+      date,
+    });
   }
 
   onProgress?.({

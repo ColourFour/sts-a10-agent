@@ -146,6 +146,19 @@ function ChessThumb() {
   );
 }
 
+function ChessAnalysisThumb() {
+  return (
+    <Svg className="thumb-board">
+      <BoardGrid size={4} />
+      <path className="shot" d="M82 88c18-26 34-12 50-34 10-14 22-18 38-18" />
+      <text className="piece-text dark-piece" x="94" y="55">♞</text>
+      <text className="piece-text light-piece" x="142" y="95">♔</text>
+      <circle className="lit-tile" cx="168" cy="36" r="8" />
+      <circle className="lit-tile" cx="134" cy="58" r="6" />
+    </Svg>
+  );
+}
+
 function JanggiThumb() {
   return (
     <Svg className="thumb-board">
@@ -334,6 +347,7 @@ const thumbnails: Record<string, ReactNode> = {
   "block-stack": <BlockStack />,
   "brick-breaker": <BrickBreaker />,
   chess: <ChessThumb />,
+  "chess-com-analysis": <ChessAnalysisThumb />,
   domineering: <DominoThumb />,
   hex: <HexThumb />,
   konane: <KonaneThumb />,

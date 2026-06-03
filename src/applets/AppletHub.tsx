@@ -3,7 +3,7 @@ import { AppletThumbnail } from "./AppletThumbnail";
 import { appletsRegistry, type AppletRegistryEntry } from "./appletsRegistry";
 import { getHighScores } from "./gameScoring";
 
-const featuredIds = new Set(["star-drift", "sector-invaders", "paddle-pop", "wall-pong"]);
+const featuredIds = ["chess-com-analysis", "star-drift", "sector-invaders", "paddle-pop", "wall-pong"];
 
 const sections = [
   {
@@ -76,7 +76,9 @@ function AppletCard({
 }
 
 export function AppletHub() {
-  const featuredApplets = appletsRegistry.filter((applet) => featuredIds.has(applet.id));
+  const featuredApplets = featuredIds
+    .map((id) => appletsRegistry.find((applet) => applet.id === id))
+    .filter((applet): applet is AppletRegistryEntry => Boolean(applet));
 
   return (
     <main className="shell hub-shell">

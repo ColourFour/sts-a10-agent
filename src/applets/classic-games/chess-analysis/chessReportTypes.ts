@@ -130,6 +130,32 @@ export type GameAnalysisStatus = {
   status: "analyzed" | "partial" | "skipped";
 };
 
+export type DailyAnalysisStatusKind =
+  | "not_analyzed"
+  | "cached_complete"
+  | "cached_partial"
+  | "failed"
+  | "skipped_no_games"
+  | "in_progress";
+
+export type DailyAnalysisStatus = {
+  analyzedGameCount: number;
+  analyzedMoveCount: number;
+  cacheKey: string;
+  criticalMoveCount: number;
+  date: string;
+  gameCount: number;
+  lastAnalyzedAt: string | null;
+  reason?: string;
+  settings: {
+    depth: number;
+    maxGames: number;
+    maxMoves: number;
+    moveTimeMs: number;
+  };
+  status: DailyAnalysisStatusKind;
+};
+
 export type DailyEngineAnalysisReport = {
   analyzedGameUrls: string[];
   cacheKey: string;

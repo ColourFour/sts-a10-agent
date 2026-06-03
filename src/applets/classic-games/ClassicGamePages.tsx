@@ -1712,7 +1712,7 @@ export function ChessPage() {
       <section className="mini-game-layout">
         <aside className="side-panel">
           <ResetButton onClick={reset} />
-          <a className="secondary-button wide" href="#/applets/chess/analysis">
+          <a className="secondary-button wide" href="#/applets/chess-com-analysis">
             Chess.com Analysis
           </a>
           <SoloModeControls

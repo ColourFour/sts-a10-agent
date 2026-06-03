@@ -1,16 +1,18 @@
 import type {
   ChessComTrackedTimeClass,
   CriticalMoveAnalysis,
+  DailyAnalysisStatus,
   DailyChessSummary,
   DailyEngineAnalysisReport,
   DailyTimeClassSummary,
   HomeworkPuzzleCandidate,
 } from "./chessReportTypes";
 import {
-  buildAnalysisCacheKey,
+  buildDayAnalysisCacheKey,
   defaultSelectedDayAnalysisSettings,
   rankCriticalMoves,
   readCachedDailyAnalysis,
+  summarizeCachedAnalysisStatus,
   type SelectedDayAnalysisSettings,
 } from "./chessSelectedDayAnalysis";
 
@@ -36,6 +38,11 @@ export type WeeklyIssueTheme = {
 };
 
 export type WeeklyReport = {
+  analysisCoverage: {
+    analyzedDayCount: number;
+    days: DailyAnalysisStatus[];
+    totalDayCount: number;
+  };
   analyzedDays: DailyEngineAnalysisReport[];
   analyzedDates: string[];
   bestDay: WeeklyRatingDay | null;
@@ -201,9 +208,9 @@ export function buildWeeklyAnalysisCacheKey({
   settings?: SelectedDayAnalysisSettings;
   username: string;
 }): string {
-  return buildAnalysisCacheKey({
+  return buildDayAnalysisCacheKey({
     date,
-    gameUrls: day.games.slice(0, settings.maxGames).map((game) => game.gameUrl),
+    games: day.games,
     settings,
     username,
   });
@@ -232,6 +239,17 @@ export function buildWeeklyReport({
     .filter((entry): entry is { date: string; report: DailyEngineAnalysisReport } => Boolean(entry.report));
   const analyzedDays = analyzedEntries.map((entry) => entry.report);
   const analyzedDates = new Set(analyzedEntries.map((entry) => entry.date));
+  const analysisCoverageDays = weekDays.map((day) =>
+    summarizeCachedAnalysisStatus({
+      date: day.date,
+      games: day.games,
+      settings,
+      username,
+    }),
+  );
+  const analyzedCoverageDayCount = analysisCoverageDays.filter(
+    (status) => status.status === "cached_complete" || status.status === "cached_partial",
+  ).length;
   const dailyNetChanges = weekDays
     .map(summarizeDailyNetChange)
     .filter((day): day is WeeklyRatingDay => Boolean(day));
@@ -243,6 +261,11 @@ export function buildWeeklyReport({
   const analyzedGameUrls = new Set(analyzedDays.flatMap((report) => report.analyzedGameUrls));
 
   return {
+    analysisCoverage: {
+      analyzedDayCount: analyzedCoverageDayCount,
+      days: analysisCoverageDays,
+      totalDayCount: analysisCoverageDays.length,
+    },
     analyzedDays,
     analyzedDates: [...analyzedDates],
     bestDay: dailyNetChanges.length > 0 ? [...dailyNetChanges].sort((left, right) => right.netChange - left.netChange)[0] : null,
@@ -282,7 +305,7 @@ export function formatWeeklyReportMarkdown(report: WeeklyReport): string {
     `- Worst day: ${report.worstDay ? `${report.worstDay.date} (${formatNetChange(report.worstDay.netChange)})` : "n/a"}`,
     "",
     "## Engine Analysis Coverage",
-    `- Analyzed days: ${report.engineAnalyzedDayCount}/${report.days.length}`,
+    `- Analyzed days: ${report.analysisCoverage.analyzedDayCount}/${report.analysisCoverage.totalDayCount}`,
     `- Stockfish-analyzed games: ${report.engineAnalyzedGameCount}`,
     `- Settings: ${report.analyzedDays[0] ? `depth ${report.analyzedDays[0].settings.depth}, ${report.analyzedDays[0].settings.moveTimeMs}ms, ${report.analyzedDays[0].settings.maxGames} game(s), ${report.analyzedDays[0].settings.maxMoves} move(s)` : "no cached engine analysis"}`,
     `- Missing analysis: ${report.missingAnalysisDates.length > 0 ? report.missingAnalysisDates.join(", ") : "none"}`,

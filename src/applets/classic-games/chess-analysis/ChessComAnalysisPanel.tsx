@@ -10,6 +10,7 @@ import { normalizeChessComGames } from "./chessGameNormalization";
 import {
   analyzeSelectedDayGames,
   defaultSelectedDayAnalysisSettings,
+  writeFailedDailyAnalysisStatus,
   type SelectedDayAnalysisProgress,
   type SelectedDayAnalysisSettings,
 } from "./chessSelectedDayAnalysis";
@@ -26,6 +27,7 @@ import {
 import type {
   ChessComTrackedTimeClass,
   CriticalMoveAnalysis,
+  DailyAnalysisStatus,
   DailyChessSummary,
   DailyEngineAnalysisReport,
   DailyTimeClassSummary,
@@ -79,6 +81,23 @@ function ratingDeltaClass(value: number | null): string {
   }
 
   return value > 0 ? "positive" : "negative";
+}
+
+function analysisStatusLabel(status: DailyAnalysisStatus["status"]): string {
+  const labels: Record<DailyAnalysisStatus["status"], string> = {
+    cached_complete: "Analyzed",
+    cached_partial: "Partial",
+    failed: "Failed",
+    in_progress: "In progress",
+    not_analyzed: "Missing",
+    skipped_no_games: "No games",
+  };
+
+  return labels[status];
+}
+
+function analysisStatusClass(status: DailyAnalysisStatus["status"]): string {
+  return status.replaceAll("_", "-");
 }
 
 function timeControlLabel(timeClass: ChessComTrackedTimeClass): string {
@@ -360,7 +379,6 @@ function AnalysisViewNav({
 }) {
   return (
     <nav className="analysis-view-nav" aria-label="Chess.com analysis sections">
-      <a href="#/applets/chess">Chess</a>
       {analysisViews.map((view) => (
         <button
           aria-pressed={activeView === view.id}
@@ -710,24 +728,46 @@ function WeeklyTimeClassCard({ summary }: { summary: WeeklyTimeClassSummary }) {
 
 function WeeklyReportPanel({
   analysisSettings,
+  onAnalysisReport,
+  onCoverageChange,
   onSelectDay,
   report,
   selectedTimeClass,
   selectedWeek,
   setSelectedWeek,
+  username,
   weeks,
 }: {
   analysisSettings: SelectedDayAnalysisSettings;
+  onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
+  onCoverageChange: () => void;
   onSelectDay: (date: string) => void;
   report: WeeklyReport;
   selectedTimeClass: ChessComTrackedTimeClass;
   selectedWeek: string;
   setSelectedWeek: (week: string) => void;
+  username: string;
   weeks: string[];
 }) {
+  const engineRef = useRef<ChessStockfishEngine | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const missingSelectedDay = report.missingAnalysisDates[0] ?? null;
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [queuedDate, setQueuedDate] = useState<string | null>(null);
+  const [queueProgress, setQueueProgress] = useState<SelectedDayAnalysisProgress | null>(null);
+  const [queueRunning, setQueueRunning] = useState(false);
+  const nextMissingStatus =
+    report.analysisCoverage.days.find((status) => status.status === "not_analyzed") ??
+    report.analysisCoverage.days.find((status) => status.status === "failed") ??
+    null;
   const selectedSummary = report.timeClassSummaries[selectedTimeClass];
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      engineRef.current?.dispose();
+    };
+  }, []);
 
   async function copyMarkdown() {
     setCopyStatus(null);
@@ -738,6 +778,86 @@ function WeeklyReportPanel({
       setCopyStatus("Could not copy Markdown in this browser.");
     }
   }
+
+  async function analyzeCoverageDay(date: string) {
+    if (!username) {
+      setQueueError("Load a Chess.com username before running weekly analysis.");
+      return;
+    }
+
+    const day = report.days.find((candidate) => candidate.date === date);
+    if (!day) {
+      setQueueError("That day is not in the selected week.");
+      return;
+    }
+
+    if (day.games.length === 0) {
+      setQueueError("That day has no games for the selected time control.");
+      return;
+    }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    engineRef.current?.dispose();
+    engineRef.current = createStockfishEngine();
+    setQueueError(null);
+    setQueuedDate(date);
+    setQueueRunning(true);
+    setQueueProgress({ current: 0, message: `Preparing ${formatDateLabel(date)}.`, total: 0 });
+
+    try {
+      const dayReport = await analyzeSelectedDayGames({
+        date,
+        engine: engineRef.current,
+        games: day.games,
+        onProgress: setQueueProgress,
+        settings: analysisSettings,
+        signal: abortController.signal,
+        username,
+      });
+      if (abortController.signal.aborted) {
+        writeFailedDailyAnalysisStatus({
+          date,
+          games: day.games,
+          reason: "Analysis stopped.",
+          settings: analysisSettings,
+          username,
+        });
+        onCoverageChange();
+        return;
+      }
+      onAnalysisReport(dayReport);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Engine analysis unavailable in this browser/build.";
+      writeFailedDailyAnalysisStatus({
+        date,
+        games: day.games,
+        reason,
+        settings: analysisSettings,
+        username,
+      });
+      setQueueError(reason);
+      onCoverageChange();
+    } finally {
+      setQueueRunning(false);
+    }
+  }
+
+  function stopQueuedAnalysis() {
+    abortControllerRef.current?.abort();
+    engineRef.current?.stop();
+    setQueueRunning(false);
+    setQueueProgress((currentProgress) => ({
+      current: currentProgress?.current ?? 0,
+      message: "Analysis stopped.",
+      total: currentProgress?.total ?? 0,
+    }));
+  }
+
+  const progressValue =
+    queueProgress && queueProgress.total > 0
+      ? `${Math.min(queueProgress.current + 1, queueProgress.total)} / ${queueProgress.total}`
+      : null;
 
   return (
     <section className="weekly-report-panel" aria-label="Weekly Report">
@@ -776,22 +896,84 @@ function WeeklyReportPanel({
       </div>
       <div className="weekly-coverage-row">
         <span>Fetched game/rating data: {report.days.length} active day(s)</span>
-        <span>Engine-analyzed data: {report.engineAnalyzedDayCount}/{report.days.length} day(s)</span>
+        <span>
+          Engine coverage: {report.analysisCoverage.analyzedDayCount}/{report.analysisCoverage.totalDayCount} day(s)
+        </span>
         <span>Stockfish-analyzed games: {report.engineAnalyzedGameCount}</span>
       </div>
-      {report.missingAnalysisDates.length > 0 ? (
-        <div className="weekly-missing-analysis">
-          <strong>Missing analysis:</strong>
-          <span>{report.missingAnalysisDates.map(formatDateLabel).join(", ")}</span>
-          {missingSelectedDay ? (
-            <button className="secondary-button" onClick={() => onSelectDay(missingSelectedDay)} type="button">
-              Analyze selected day first
+      <section className="weekly-analysis-queue" aria-label="Weekly analysis coverage">
+        <div className="card-topline">
+          <div>
+            <h3>Analysis coverage</h3>
+            <p className="helper-text">
+              Analyze one missing day at a time. Cached days are reused unless you explicitly reanalyze them.
+            </p>
+          </div>
+          <div className="weekly-queue-actions">
+            <button
+              className="secondary-button primary-action"
+              disabled={queueRunning || !nextMissingStatus}
+              onClick={() => nextMissingStatus && analyzeCoverageDay(nextMissingStatus.date)}
+              type="button"
+            >
+              Analyze next missing day
             </button>
-          ) : null}
+            <button className="secondary-button" disabled={!queueRunning} onClick={stopQueuedAnalysis} type="button">
+              Stop
+            </button>
+          </div>
         </div>
-      ) : (
-        <p className="helper-text">Every loaded day in this week has cached selected-day engine analysis.</p>
-      )}
+        {queueProgress ? (
+          <p className="helper-text" role="status">
+            {queuedDate ? `${formatDateLabel(queuedDate)}: ` : ""}
+            {queueProgress.message}
+            {progressValue ? ` ${progressValue}` : ""}
+          </p>
+        ) : null}
+        {queueError ? <p className="error-text">Engine analysis unavailable in this browser/build. {queueError}</p> : null}
+        <div className="weekly-analysis-status-list">
+          {report.analysisCoverage.days.map((status) => {
+            const statusClass = analysisStatusClass(status.status);
+            const isQueued = queueRunning && queuedDate === status.date;
+            const canAnalyze = status.status !== "skipped_no_games";
+            const actionLabel =
+              status.status === "failed"
+                ? "Retry"
+                : status.status === "cached_complete" || status.status === "cached_partial"
+                  ? "Reanalyze"
+                  : "Analyze";
+
+            return (
+              <article className="weekly-analysis-status-row" key={status.date}>
+                <div>
+                  <strong>{formatDateLabel(status.date)}</strong>
+                  <span>
+                    {status.gameCount} game(s), {status.analyzedMoveCount} analyzed move(s),{" "}
+                    {status.criticalMoveCount} critical
+                  </span>
+                  {status.reason ? <small>{status.reason}</small> : null}
+                </div>
+                <span className={`analysis-status-chip status-${statusClass}`}>
+                  {isQueued ? "In progress" : analysisStatusLabel(status.status)}
+                </span>
+                <div className="weekly-status-actions">
+                  <button className="secondary-button" onClick={() => onSelectDay(status.date)} type="button">
+                    Open day
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={queueRunning || !canAnalyze}
+                    onClick={() => analyzeCoverageDay(status.date)}
+                    type="button"
+                  >
+                    {actionLabel}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
       <div className="weekly-report-columns">
         <section className="analysis-placeholder-panel">
           <h3>Recurring issue labels</h3>
@@ -831,6 +1013,7 @@ function SelectedDayReview({
   days,
   onAnalysisSettingsChange,
   onAnalysisReport,
+  onAnalysisStatusChange,
   onDateChange,
   username,
 }: {
@@ -840,6 +1023,7 @@ function SelectedDayReview({
   days: DailyChessSummary[];
   onAnalysisSettingsChange: (settings: SelectedDayAnalysisSettings) => void;
   onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
+  onAnalysisStatusChange: () => void;
   onDateChange: (date: string) => void;
   username: string;
 }) {
@@ -892,12 +1076,33 @@ function SelectedDayReview({
         signal: abortController.signal,
         username,
       });
+      if (abortController.signal.aborted) {
+        writeFailedDailyAnalysisStatus({
+          date: day.date,
+          games: selectedGames,
+          reason: "Analysis stopped.",
+          settings: analysisSettings,
+          username,
+        });
+        onAnalysisStatusChange();
+        return;
+      }
       onAnalysisReport(report);
     } catch (error) {
-      setAnalysisError(
+      const reason =
         error instanceof Error
           ? error.message
-          : "Engine analysis unavailable in this browser/build.",
+          : "Engine analysis unavailable in this browser/build.";
+      writeFailedDailyAnalysisStatus({
+        date: day.date,
+        games: selectedGames,
+        reason,
+        settings: analysisSettings,
+        username,
+      });
+      onAnalysisStatusChange();
+      setAnalysisError(
+        reason,
       );
     } finally {
       setAnalysisRunning(false);
@@ -1147,6 +1352,10 @@ export function ChessComAnalysisPanel() {
     });
   }, [analysisRevision, analysisSettings, loadedUsername, selectedWeek, summaries]);
 
+  const bumpAnalysisRevision = useCallback(() => {
+    setAnalysisRevision((revision) => revision + 1);
+  }, []);
+
   const handleAnalysisReport = useCallback((report: DailyEngineAnalysisReport | null) => {
     setSelectedAnalysisReport(report);
     if (report) {
@@ -1315,6 +1524,7 @@ export function ChessComAnalysisPanel() {
                 days={summaries}
                 onAnalysisSettingsChange={setAnalysisSettings}
                 onAnalysisReport={handleAnalysisReport}
+                onAnalysisStatusChange={bumpAnalysisRevision}
                 onDateChange={setSelectedDate}
                 username={loadedUsername}
               />
@@ -1329,6 +1539,8 @@ export function ChessComAnalysisPanel() {
             {activeView === "weekly" && weeklyReport ? (
               <WeeklyReportPanel
                 analysisSettings={analysisSettings}
+                onAnalysisReport={handleAnalysisReport}
+                onCoverageChange={bumpAnalysisRevision}
                 selectedTimeClass={selectedTimeClass}
                 onSelectDay={(date) => {
                   setSelectedDate(date);
@@ -1337,6 +1549,7 @@ export function ChessComAnalysisPanel() {
                 report={weeklyReport}
                 selectedWeek={selectedWeek ?? weeklyReport.weekKey}
                 setSelectedWeek={setSelectedWeek}
+                username={loadedUsername}
                 weeks={availableWeeks}
               />
             ) : null}
