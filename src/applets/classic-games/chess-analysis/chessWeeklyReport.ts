@@ -55,7 +55,7 @@ export type WeeklyReport = {
   worstDay: WeeklyRatingDay | null;
 };
 
-const timeClasses: ChessComTrackedTimeClass[] = ["blitz", "rapid"];
+const timeClasses: ChessComTrackedTimeClass[] = ["bullet", "blitz", "rapid"];
 
 function parseLocalDate(date: string): Date {
   return new Date(`${date}T12:00:00`);
@@ -257,6 +257,7 @@ export function buildWeeklyReport({
     missingAnalysisDates: weekDays.filter((day) => !analyzedDates.has(day.date)).map((day) => day.date),
     themeCounts: summarizeThemes(topCriticalMoves),
     timeClassSummaries: {
+      bullet: summarizeTimeClass(weekDays, "bullet"),
       blitz: summarizeTimeClass(weekDays, "blitz"),
       rapid: summarizeTimeClass(weekDays, "rapid"),
     },
@@ -267,12 +268,14 @@ export function buildWeeklyReport({
 }
 
 export function formatWeeklyReportMarkdown(report: WeeklyReport): string {
+  const bullet = report.timeClassSummaries.bullet;
   const blitz = report.timeClassSummaries.blitz;
   const rapid = report.timeClassSummaries.rapid;
   const lines = [
     `# Chess.com Weekly Report: ${getWeekLabel(report.weekKey)}`,
     "",
     "## Fetched Game / Rating Data",
+    `- Bullet: ${bullet.gamesPlayed} games, ${bullet.wins}-${bullet.losses}-${bullet.draws}, ${formatRating(bullet.firstKnownRating)} to ${formatRating(bullet.finalRating)} (${formatNetChange(bullet.netChange)})`,
     `- Blitz: ${blitz.gamesPlayed} games, ${blitz.wins}-${blitz.losses}-${blitz.draws}, ${formatRating(blitz.firstKnownRating)} to ${formatRating(blitz.finalRating)} (${formatNetChange(blitz.netChange)})`,
     `- Rapid: ${rapid.gamesPlayed} games, ${rapid.wins}-${rapid.losses}-${rapid.draws}, ${formatRating(rapid.firstKnownRating)} to ${formatRating(rapid.finalRating)} (${formatNetChange(rapid.netChange)})`,
     `- Best day: ${report.bestDay ? `${report.bestDay.date} (${formatNetChange(report.bestDay.netChange)})` : "n/a"}`,

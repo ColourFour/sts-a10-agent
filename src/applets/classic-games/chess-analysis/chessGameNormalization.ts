@@ -6,7 +6,7 @@ import type {
   NormalizedChessGame,
 } from "./chessReportTypes";
 
-const trackedTimeClasses = new Set<ChessComTrackedTimeClass>(["blitz", "rapid"]);
+const trackedTimeClasses = new Set<ChessComTrackedTimeClass>(["bullet", "blitz", "rapid"]);
 const drawResults = new Set([
   "agreed",
   "repetition",
@@ -21,7 +21,7 @@ function normalizeUsername(username: string): string {
 }
 
 function isTrackedTimeClass(timeClass: string | undefined): timeClass is ChessComTrackedTimeClass {
-  return timeClass === "blitz" || timeClass === "rapid";
+  return timeClass === "bullet" || timeClass === "blitz" || timeClass === "rapid";
 }
 
 function cleanResult(result: string | undefined): ChessGameResult {

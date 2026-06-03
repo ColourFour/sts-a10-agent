@@ -5,7 +5,7 @@ import type {
   NormalizedChessGame,
 } from "./chessReportTypes";
 
-const timeClassOrder: ChessComTrackedTimeClass[] = ["blitz", "rapid"];
+const timeClassOrder: ChessComTrackedTimeClass[] = ["bullet", "blitz", "rapid"];
 
 function emptySummary(date: string, timeClass: ChessComTrackedTimeClass): DailyTimeClassSummary {
   return {

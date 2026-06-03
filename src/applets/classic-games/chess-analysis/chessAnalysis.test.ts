@@ -68,7 +68,7 @@ afterEach(() => {
 });
 
 describe("Chess.com game normalization", () => {
-  it("normalizes rated blitz and rapid games for either player color", () => {
+  it("normalizes rated bullet, blitz, and rapid games for either player color", () => {
     const games = normalizeChessComGames(
       [
         game({ end_time: dayOneMorning, white: { rating: 1500, result: "win", username: "TestPlayer" } }),
@@ -85,8 +85,8 @@ describe("Chess.com game normalization", () => {
       "TestPlayer",
     );
 
-    expect(games).toHaveLength(2);
-    expect(games[0]).toMatchObject({
+    expect(games).toHaveLength(3);
+    expect(games.find((normalizedGame) => normalizedGame.gameUrl === "https://www.chess.com/game/live/1")).toMatchObject({
       gameUrl: "https://www.chess.com/game/live/1",
       opponentUsername: "Opponent",
       playerColor: "white",
@@ -94,13 +94,17 @@ describe("Chess.com game normalization", () => {
       result: "win",
       timeClass: "blitz",
     });
-    expect(games[1]).toMatchObject({
+    expect(games.find((normalizedGame) => normalizedGame.gameUrl === "https://www.chess.com/game/live/2")).toMatchObject({
       gameUrl: "https://www.chess.com/game/live/2",
       opponentUsername: "OtherUser",
       playerColor: "black",
       playerRatingAfterGame: 1510,
       result: "loss",
       timeClass: "rapid",
+    });
+    expect(games.find((normalizedGame) => normalizedGame.gameUrl === "https://www.chess.com/game/live/3")).toMatchObject({
+      gameUrl: "https://www.chess.com/game/live/3",
+      timeClass: "bullet",
     });
   });
 });

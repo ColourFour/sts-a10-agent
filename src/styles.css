@@ -2157,6 +2157,7 @@ h3 {
   overflow-x: auto;
 }
 
+.analysis-view-nav a,
 .analysis-view-nav button {
   flex: 0 0 auto;
   min-height: 38px;
@@ -2169,9 +2170,11 @@ h3 {
   font-size: 0.88rem;
   font-weight: 900;
   cursor: pointer;
+  text-decoration: none;
   white-space: nowrap;
 }
 
+.analysis-view-nav a:hover,
 .analysis-view-nav button.selected,
 .analysis-view-nav button:hover {
   border-color: rgba(240, 198, 111, 0.35);
@@ -2196,6 +2199,10 @@ h3 {
   display: grid;
   gap: 4px;
   margin-bottom: 10px;
+}
+
+.time-control-selector {
+  max-width: 320px;
 }
 
 .chess-analysis-days {
@@ -2256,7 +2263,7 @@ h3 {
 }
 
 .rating-delta {
-  color: #f8ead2;
+  color: var(--muted);
   font-weight: 950;
 }
 
@@ -2266,6 +2273,10 @@ h3 {
 
 .rating-delta.negative {
   color: #ffb4a8;
+}
+
+.rating-delta.neutral {
+  color: var(--muted);
 }
 
 .chess-analysis-metrics {
@@ -2408,7 +2419,7 @@ h3 {
 
 .weekly-report-columns {
   display: grid;
-  grid-template-columns: minmax(190px, 0.55fr) repeat(2, minmax(280px, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: start;
 }
@@ -2421,17 +2432,41 @@ h3 {
   margin-top: 12px;
 }
 
-.chess-review-grid {
+.analysis-results-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 1.2fr) repeat(3, minmax(220px, 1fr));
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 0.75fr);
   gap: 12px;
   align-items: start;
 }
 
+.analysis-results-grid > section,
 .chess-review-grid > section {
   display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+.analysis-context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.analysis-context-card {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(10, 13, 17, 0.35);
+}
+
+.analysis-context-card strong {
+  color: var(--text);
 }
 
 .chess-game-list,
@@ -2454,6 +2489,13 @@ h3 {
   color: var(--muted);
   background: rgba(10, 13, 17, 0.52);
   text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chess-game-row.selected {
+  border-color: rgba(240, 198, 111, 0.42);
+  background: rgba(240, 198, 111, 0.1);
 }
 
 .chess-game-row span {
@@ -2588,11 +2630,12 @@ h3 {
 
 .rating-change-chart {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(46px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
   align-items: end;
   gap: 8px;
   min-height: 160px;
   margin-top: 10px;
+  overflow-x: auto;
 }
 
 .rating-change-bar-wrap {
@@ -2607,6 +2650,18 @@ h3 {
   color: var(--text);
   font-size: 0.74rem;
   font-weight: 900;
+}
+
+.rating-change-value.positive {
+  color: #a8ffcf;
+}
+
+.rating-change-value.negative {
+  color: #ffb4a8;
+}
+
+.rating-change-value.neutral {
+  color: var(--muted);
 }
 
 .rating-change-track {
@@ -2645,6 +2700,10 @@ h3 {
 
 .rating-change-bar.negative {
   background: linear-gradient(180deg, #ffad9f, #d95c50);
+}
+
+.rating-change-bar.neutral {
+  background: linear-gradient(180deg, #d6dce5, #838b96);
 }
 
 .rating-change-date {
@@ -2689,8 +2748,110 @@ h3 {
   white-space: normal;
 }
 
+.analysis-focus-section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.focused-review-card {
+  display: grid;
+  grid-template-columns: minmax(280px, 420px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 8px;
+  background: rgba(10, 13, 17, 0.44);
+}
+
+.focused-review-copy {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.focused-review-copy h3 {
+  font-size: 1.35rem;
+}
+
+.move-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.move-detail-grid div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(232, 220, 200, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.move-detail-grid dt {
+  color: var(--subtle);
+  font-size: 0.75rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.move-detail-grid dd {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-weight: 950;
+  overflow-wrap: anywhere;
+}
+
+.source-game-link {
+  width: fit-content;
+  color: #dcecff;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.source-game-link:hover {
+  text-decoration: underline;
+}
+
+.selectable-review-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.selectable-review-list button {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.selectable-review-list button.selected,
+.selectable-review-list button:hover {
+  border-color: rgba(240, 198, 111, 0.38);
+  background: rgba(240, 198, 111, 0.1);
+}
+
+.selectable-review-list strong {
+  color: var(--text);
+}
+
 .fen-board-wrap {
-  width: min(176px, 100%);
+  width: min(220px, 100%);
+}
+
+.fen-board-wrap.large {
+  width: min(420px, 100%);
 }
 
 .fen-board {
@@ -2699,9 +2860,9 @@ h3 {
   width: 100%;
   aspect-ratio: 1;
   overflow: hidden;
-  border: 1px solid rgba(232, 220, 200, 0.24);
-  border-radius: 7px;
-  background: rgba(0, 0, 0, 0.2);
+  border: 2px solid rgba(216, 231, 246, 0.7);
+  border-radius: 8px;
+  background: #d8e7f6;
 }
 
 .fen-square {
@@ -2710,17 +2871,17 @@ h3 {
   place-items: center;
   min-width: 0;
   color: #161c21;
-  font-size: clamp(0.9rem, 2.1vw, 1.34rem);
+  font-size: clamp(1.05rem, 3vw, 2rem);
   font-weight: 900;
   line-height: 1;
 }
 
 .fen-square.light {
-  background: #d8c5a5;
+  background: #e9f2fb;
 }
 
 .fen-square.dark {
-  background: #765a3b;
+  background: #6f9dcc;
 }
 
 .fen-square.played::after,
@@ -2739,6 +2900,27 @@ h3 {
 
 .fen-square.best::before {
   border-color: rgba(83, 221, 142, 0.9);
+}
+
+.fen-file-label,
+.fen-rank-label {
+  position: absolute;
+  z-index: 2;
+  color: rgba(9, 22, 38, 0.78);
+  font-size: 0.58rem;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.fen-file-label {
+  right: 3px;
+  bottom: 2px;
+}
+
+.fen-rank-label {
+  top: 2px;
+  left: 3px;
 }
 
 .critical-move-list,
@@ -2798,7 +2980,7 @@ h3 {
 
 @media (max-width: 1180px) {
   .weekly-report-columns,
-  .chess-review-grid {
+  .analysis-results-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -2811,7 +2993,8 @@ h3 {
   }
 
   .critical-move-list li,
-  .homework-puzzle-list li {
+  .homework-puzzle-list li,
+  .focused-review-card {
     grid-template-columns: 1fr;
   }
 }
@@ -2831,7 +3014,11 @@ h3 {
   }
 
   .fen-board-wrap {
-    width: min(220px, 100%);
+    width: min(260px, 100%);
+  }
+
+  .fen-board-wrap.large {
+    width: min(340px, 100%);
   }
 }
 
@@ -3657,8 +3844,9 @@ h3 {
     padding: 22px;
   }
 
-  .chess-review-grid {
-    grid-template-columns: 1fr 1fr;
+  .analysis-results-grid,
+  .focused-review-card {
+    grid-template-columns: 1fr;
   }
 
   .weekly-report-columns {
@@ -3696,7 +3884,7 @@ h3 {
     width: 100%;
   }
 
-  .chess-review-grid {
+  .analysis-results-grid {
     grid-template-columns: 1fr;
   }
 

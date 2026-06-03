@@ -1,4 +1,4 @@
-export type ChessComTrackedTimeClass = "blitz" | "rapid";
+export type ChessComTrackedTimeClass = "bullet" | "blitz" | "rapid";
 
 export type ChessGameResult =
   | "win"
