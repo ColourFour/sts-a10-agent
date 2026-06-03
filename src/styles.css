@@ -2256,6 +2256,105 @@ h3 {
   background: rgba(240, 198, 111, 0.12);
 }
 
+.coach-status-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.coach-status-row span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(10, 13, 17, 0.34);
+  font-size: 0.82rem;
+  line-height: 1.32;
+}
+
+.coach-status-row strong {
+  color: #f2cc7c;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.coach-status-row .status-cached-complete {
+  border-color: rgba(168, 255, 207, 0.24);
+  color: #dfffea;
+  background: rgba(47, 182, 118, 0.09);
+}
+
+.coach-status-row .status-cached-partial,
+.coach-status-row .status-in-progress {
+  border-color: rgba(240, 198, 111, 0.24);
+  color: #ffedc0;
+  background: rgba(240, 198, 111, 0.09);
+}
+
+.coach-status-row .status-failed {
+  border-color: rgba(255, 180, 168, 0.24);
+  color: #ffd7d1;
+  background: rgba(217, 92, 80, 0.08);
+}
+
+.coach-next-step-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(240, 198, 111, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(240, 198, 111, 0.09), rgba(168, 255, 207, 0.045)),
+    rgba(10, 13, 17, 0.42);
+}
+
+.coach-next-step-panel h3 {
+  font-size: 1.08rem;
+}
+
+.coach-next-step-panel.level-advanced {
+  border-color: rgba(118, 166, 230, 0.28);
+  background:
+    linear-gradient(135deg, rgba(118, 166, 230, 0.1), rgba(240, 198, 111, 0.045)),
+    rgba(10, 13, 17, 0.42);
+}
+
+.coach-next-step-actions,
+.coach-next-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.coach-next-step-actions {
+  max-width: min(100%, 460px);
+}
+
+.coach-next-step-meta {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
+.coach-next-step-meta span {
+  padding: 5px 8px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.14);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
 .chess-analysis-days {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));

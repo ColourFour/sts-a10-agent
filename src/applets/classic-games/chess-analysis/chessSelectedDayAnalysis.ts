@@ -269,6 +269,61 @@ export function writeDailyAnalysisStatus(cacheKey: string, status: DailyAnalysis
   }
 }
 
+export function readRelatedDailyAnalysisStatuses({
+  date,
+  username,
+}: {
+  date: string;
+  username: string;
+}): DailyAnalysisStatus[] {
+  if (!canUseLocalStorage()) {
+    return [];
+  }
+
+  const normalizedUsername = username.trim().toLowerCase();
+  const keyPrefix = `${cachePrefix}.${normalizedUsername}.${date}.`;
+  const statuses = new Map<string, DailyAnalysisStatus>();
+
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith(keyPrefix)) {
+        continue;
+      }
+
+      if (key.endsWith(".status")) {
+        const value = window.localStorage.getItem(key);
+        if (!value) {
+          continue;
+        }
+
+        const status = JSON.parse(value) as DailyAnalysisStatus;
+        statuses.set(status.cacheKey, {
+          ...status,
+          date,
+        });
+        continue;
+      }
+
+      const cached = readCachedDailyAnalysis(key);
+      if (cached) {
+        statuses.set(key, {
+          ...statusFromReport(cached, cached.analyzedGameUrls.length),
+          date,
+        });
+      }
+    }
+  } catch {
+    return [...statuses.values()];
+  }
+
+  return [...statuses.values()].sort((left, right) => {
+    const leftTime = left.lastAnalyzedAt ? Date.parse(left.lastAnalyzedAt) : 0;
+    const rightTime = right.lastAnalyzedAt ? Date.parse(right.lastAnalyzedAt) : 0;
+    return rightTime - leftTime;
+  });
+}
+
 export function summarizeCachedAnalysisStatus({
   date,
   games,

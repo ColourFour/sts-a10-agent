@@ -10,7 +10,11 @@ import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
 import {
   analyzeSelectedDayGames,
+  buildDayAnalysisCacheKey,
   defaultSelectedDayAnalysisSettings,
+  readCachedDailyAnalysis,
+  readRelatedDailyAnalysisStatuses,
+  summarizeCachedAnalysisStatus,
   writeFailedDailyAnalysisStatus,
   type SelectedDayAnalysisProgress,
   type SelectedDayAnalysisSettings,
@@ -95,11 +99,11 @@ function ratingDeltaClass(value: number | null): string {
 
 function analysisStatusLabel(status: DailyAnalysisStatus["status"]): string {
   const labels: Record<DailyAnalysisStatus["status"], string> = {
-    cached_complete: "Analyzed",
-    cached_partial: "Partial",
-    failed: "Failed",
+    cached_complete: "Saved run matches",
+    cached_partial: "Saved partial run matches",
+    failed: "Previous run stopped",
     in_progress: "In progress",
-    not_analyzed: "Missing",
+    not_analyzed: "No matching saved run",
     skipped_no_games: "No games",
   };
 
@@ -1372,12 +1376,77 @@ function formatAnalysisSettingsSummary(settings: SelectedDayAnalysisSettings): s
   return `depth ${settings.depth}, ${settings.moveTimeMs}ms per position, up to ${settings.maxGames} game(s), ${settings.maxMoves} player move(s)`;
 }
 
+function formatGameScope(status: DailyAnalysisStatus | null, fallbackGameCount: number): string {
+  const gameCount = status?.gameCount ?? fallbackGameCount;
+  const analyzedCount = status?.analyzedGameCount ?? 0;
+  if (!status || status.status === "not_analyzed") {
+    return `selected day, ${gameCount} game(s)`;
+  }
+
+  if (status.status === "cached_complete" || status.status === "cached_partial") {
+    return `${analyzedCount}/${gameCount} saved game(s)`;
+  }
+
+  return `${gameCount} game(s) in current scope`;
+}
+
+function savedRunStatusCopy(status: DailyAnalysisStatus | null, relatedStatuses: DailyAnalysisStatus[]): string {
+  if (!status) {
+    return "Load games to check saved analysis.";
+  }
+
+  if (status.status === "cached_complete") {
+    return "Saved analysis matches current settings.";
+  }
+
+  if (status.status === "cached_partial") {
+    return "A saved partial run matches current settings.";
+  }
+
+  if (status.status === "in_progress") {
+    return "A run was started for this exact scope.";
+  }
+
+  if (status.status === "failed") {
+    return "A previous run stopped for this exact scope; retry is available.";
+  }
+
+  if (status.status === "skipped_no_games") {
+    return "No games exist for this time control and day.";
+  }
+
+  if (relatedStatuses.length > 0) {
+    return "A saved run exists for this day, but settings or game scope differ.";
+  }
+
+  return "No saved analysis for this day yet.";
+}
+
 function selectedDaySavedAnalysisNote(settings: SelectedDayAnalysisSettings): string {
-  return `Saved analysis is matched by username, date, game scope, and settings (${formatAnalysisSettingsSummary(settings)}). If you change any setting, the app looks for a different saved run.`;
+  return `Saved analysis is matched by username, date, game scope, and settings (${formatAnalysisSettingsSummary(settings)}). Changing settings or switching between all-day and single-game review only changes which saved run is reused.`;
 }
 
 function weeklySavedAnalysisNote(settings: SelectedDayAnalysisSettings): string {
-  return `Weekly coverage counts saved selected-day reviews that match the current time control and settings (${formatAnalysisSettingsSummary(settings)}). A day can look missing if it was reviewed with a different game limit, move limit, depth, or time setting.`;
+  return `Weekly coverage counts saved selected-day reviews that match the current time control and settings (${formatAnalysisSettingsSummary(settings)}). Single-game reviews stay useful in the day review, but they are not counted as weekly day coverage.`;
+}
+
+function weeklyCoverageCopy(report: WeeklyReport): string {
+  if (report.analysisCoverage.totalDayCount === 0) {
+    return "No active days in this week for the selected time control.";
+  }
+
+  if (report.analysisCoverage.analyzedDayCount === report.analysisCoverage.totalDayCount) {
+    return "Every active day in this week has a matching saved selected-day review.";
+  }
+
+  const mismatchCount = report.analysisCoverage.days.filter(
+    (status) => status.status === "not_analyzed" && status.lastAnalyzedAt,
+  ).length;
+  if (mismatchCount > 0) {
+    return `${mismatchCount} day(s) have a saved status that does not match the current settings or scope. Reuse the old settings or analyze the day again.`;
+  }
+
+  return "Some active days do not have matching selected-day analysis yet. Analyze one missing day at a time.";
 }
 
 function analysisSettingsEqual(left: SelectedDayAnalysisSettings, right: SelectedDayAnalysisSettings): boolean {
@@ -1639,6 +1708,7 @@ function WeeklyReportPanel({
           Engine coverage: {report.analysisCoverage.analyzedDayCount}/{report.analysisCoverage.totalDayCount} day(s)
         </span>
         <span>Stockfish-analyzed games: {report.engineAnalyzedGameCount}</span>
+        <span>{weeklyCoverageCopy(report)}</span>
         {(showEngineDetails || playerLevel === "advanced") ? (
           <span>Saved-run lookup: {formatAnalysisSettingsSummary(analysisSettings)}</span>
         ) : null}
@@ -1648,7 +1718,7 @@ function WeeklyReportPanel({
           <div>
             <h3>Analysis coverage</h3>
             <p className="helper-text">
-              {weeklySavedAnalysisNote(analysisSettings)} Analyze one missing day at a time; matching saved days are reused unless you reanalyze them.
+              {weeklySavedAnalysisNote(analysisSettings)} Missing means there is no matching all-day run for this week view; it does not remove any saved single-game or differently configured review.
             </p>
           </div>
           <div className="weekly-queue-actions">
@@ -1693,7 +1763,14 @@ function WeeklyReportPanel({
                     {status.gameCount} game(s), {status.analyzedMoveCount} analyzed move(s),{" "}
                     {status.criticalMoveCount} critical
                   </span>
-                  {status.reason ? <small>{status.reason}</small> : null}
+                  <small>
+                    {status.reason ??
+                      (status.status === "not_analyzed"
+                        ? "No matching all-day saved run for the current time control and settings."
+                        : status.status === "cached_complete" || status.status === "cached_partial"
+                          ? "This saved selected-day run counts toward weekly coverage."
+                          : "")}
+                  </small>
                 </div>
                 <span className={`analysis-status-chip status-${statusClass}`}>
                   {isQueued ? "In progress" : analysisStatusLabel(status.status)}
@@ -1758,6 +1835,144 @@ function WeeklyReportPanel({
   );
 }
 
+function CoachStatusRow({
+  activeDay,
+  fallbackGameCount,
+  relatedStatuses,
+  savedStatus,
+  selectedTimeClass,
+  username,
+}: {
+  activeDay: DailyChessSummary | null;
+  fallbackGameCount: number;
+  relatedStatuses: DailyAnalysisStatus[];
+  savedStatus: DailyAnalysisStatus | null;
+  selectedTimeClass: ChessComTrackedTimeClass;
+  username: string;
+}) {
+  return (
+    <div className="coach-status-row" aria-label="Current chess review status">
+      <span>
+        <strong>User</strong>
+        {username || "not loaded"}
+      </span>
+      <span>
+        <strong>Time</strong>
+        {timeControlLabel(selectedTimeClass)}
+      </span>
+      <span>
+        <strong>Date</strong>
+        {activeDay ? formatDateLabel(activeDay.date) : "no active day"}
+      </span>
+      <span>
+        <strong>Scope</strong>
+        {formatGameScope(savedStatus, fallbackGameCount)}
+      </span>
+      <span className={savedStatus ? `status-${analysisStatusClass(savedStatus.status)}` : ""}>
+        <strong>Saved</strong>
+        {savedRunStatusCopy(savedStatus, relatedStatuses)}
+      </span>
+    </div>
+  );
+}
+
+function CoachNextStepPanel({
+  activeDay,
+  onViewChange,
+  playerLevel,
+  reviewReport,
+  savedStatus,
+  selectedTimeClass,
+  weeklyReport,
+}: {
+  activeDay: DailyChessSummary | null;
+  onViewChange: (view: AnalysisView) => void;
+  playerLevel: PlayerLevel;
+  reviewReport: DailyEngineAnalysisReport | null;
+  savedStatus: DailyAnalysisStatus | null;
+  selectedTimeClass: ChessComTrackedTimeClass;
+  weeklyReport: WeeklyReport | null;
+}) {
+  const selectedSummary = activeDay?.byTimeClass[selectedTimeClass] ?? null;
+  const ratingMove = selectedSummary ? formatNetChange(selectedSummary.netChange) : "n/a";
+  const hasSavedReview = Boolean(reviewReport || savedStatus?.status === "cached_complete" || savedStatus?.status === "cached_partial");
+  const primaryView: AnalysisView =
+    playerLevel === "advanced"
+      ? "analysis"
+      : playerLevel === "beginner" && hasSavedReview
+        ? "critical"
+        : "analysis";
+  const primaryLabel =
+    playerLevel === "beginner"
+      ? hasSavedReview
+        ? "Review biggest mistake"
+        : "Review selected day"
+      : playerLevel === "advanced"
+        ? "Open analysis controls"
+        : hasSavedReview
+          ? "Continue review"
+          : "Review selected day";
+
+  let body = "Load games, choose a time control, then review one day.";
+  if (!activeDay) {
+    body = `No ${selectedTimeClass} day is selected. Try another time control or load more archives.`;
+  } else if (playerLevel === "beginner") {
+    body = hasSavedReview
+      ? `Start simple: ${timeControlLabel(selectedTimeClass)} moved ${ratingMove}, then review the biggest mistake and solve one practice position.`
+      : `Start simple: check the ${ratingMove} rating move for this day, run review, then solve one practice position.`;
+  } else if (playerLevel === "intermediate") {
+    body = hasSavedReview
+      ? "Use the selected day first, then work through critical moves, homework, and the weekly plan."
+      : "Review the selected day first so critical moves, homework, and weekly coverage have matching data.";
+  } else {
+    body = "Use the analysis path for replay, saved-run matching, and expert settings. Engine controls stay visible in this mode.";
+  }
+
+  const weeklyCoverage =
+    weeklyReport && weeklyReport.analysisCoverage.totalDayCount > 0
+      ? `${weeklyReport.analysisCoverage.analyzedDayCount}/${weeklyReport.analysisCoverage.totalDayCount} weekly day(s) covered`
+      : "No weekly coverage yet";
+
+  return (
+    <section className={`coach-next-step-panel level-${playerLevel}`} aria-label="Coach next step">
+      <div>
+        <p className="eyebrow">Next step</p>
+        <h3>{primaryLabel}</h3>
+        <p className="helper-text">{body}</p>
+      </div>
+      <div className="coach-next-step-actions">
+        <button className="secondary-button primary-action" disabled={!activeDay} onClick={() => onViewChange(primaryView)} type="button">
+          {primaryLabel}
+        </button>
+        {playerLevel === "beginner" ? (
+          <button className="secondary-button" disabled={!hasSavedReview} onClick={() => onViewChange("homework")} type="button">
+            Practice one position
+          </button>
+        ) : null}
+        {playerLevel === "intermediate" ? (
+          <button className="secondary-button" onClick={() => onViewChange("weekly")} type="button">
+            Open weekly plan
+          </button>
+        ) : null}
+        {playerLevel === "advanced" ? (
+          <>
+            <button className="secondary-button" onClick={() => onViewChange("critical")} type="button">
+              Critical moves
+            </button>
+            <button className="secondary-button" onClick={() => onViewChange("weekly")} type="button">
+              Settings coverage
+            </button>
+          </>
+        ) : null}
+      </div>
+      <div className="coach-next-step-meta">
+        <span>{weeklyCoverage}</span>
+        <span>{savedStatus ? analysisStatusLabel(savedStatus.status) : "No saved-run check yet"}</span>
+      </div>
+    </section>
+  );
+}
+
 function SelectedDayReview({
   analysisSettings,
   analysisReport,
@@ -1795,6 +2010,27 @@ function SelectedDayReview({
   const [progress, setProgress] = useState<SelectedDayAnalysisProgress | null>(null);
   const selectedGames = selectedGameUrl === "all" ? day.games : day.games.filter((game) => game.gameUrl === selectedGameUrl);
   const selectedSingleGame = selectedGameUrl === "all" ? null : day.games.find((game) => game.gameUrl === selectedGameUrl) ?? null;
+  const selectedScopeStatus = useMemo(
+    () =>
+      username
+        ? summarizeCachedAnalysisStatus({
+            date: day.date,
+            games: selectedGames,
+            settings: analysisSettings,
+            username,
+          })
+        : null,
+    [analysisReport, analysisSettings, day.date, selectedGames, username],
+  );
+  const relatedScopeStatuses = useMemo(
+    () =>
+      username
+        ? readRelatedDailyAnalysisStatuses({ date: day.date, username }).filter(
+            (status) => status.cacheKey !== selectedScopeStatus?.cacheKey,
+          )
+        : [],
+    [analysisReport, day.date, selectedScopeStatus?.cacheKey, username],
+  );
 
   useEffect(() => {
     setSelectedGameUrl("all");
@@ -1903,6 +2139,14 @@ function SelectedDayReview({
             ? "Start with the rating move, review the biggest mistake, then solve one practice position."
             : "Follow the review path from rating swing to mistakes to practice. Stockfish only runs when you ask for selected-day analysis."}
         </p>
+        <CoachStatusRow
+          activeDay={day}
+          fallbackGameCount={selectedGames.length}
+          relatedStatuses={relatedScopeStatuses}
+          savedStatus={selectedScopeStatus}
+          selectedTimeClass={day.games[0]?.timeClass ?? "blitz"}
+          username={username}
+        />
         <div className="coach-flow-grid" aria-label="Guided review flow">
           <article>
             <span>1</span>
@@ -1946,7 +2190,11 @@ function SelectedDayReview({
           </label>
           <div className="analysis-context-card">
             <strong>{selectedGameUrl === "all" ? `${day.games.length} game(s) selected` : "1 game selected"}</strong>
-            <span>{day.games[0]?.timeClass ?? "selected time control"}</span>
+            <span>
+              {selectedGameUrl === "all"
+                ? "All-day review can count toward weekly coverage when settings match."
+                : "Single-game review is saved separately and is not counted as weekly day coverage."}
+            </span>
           </div>
         </div>
         {playerLevel === "beginner" && showEngineDetails ? (
@@ -2050,8 +2298,8 @@ function SelectedDayReview({
             {analysisReport
               ? `Reviewed ${analysisReport.analyzedGameUrls.length} game(s). Start with ${analysisReport.criticalMoves.length} ${playerLevel === "beginner" ? "mistake" : "critical move"} card(s), then solve ${analysisReport.homeworkPuzzles.length} homework puzzle(s).`
               : playerLevel === "beginner"
-                ? "Run review for this day to get mistake cards and practice positions."
-                : "No saved analysis matches this date, game scope, and settings yet. Run analysis now, or restore the settings used for a previous run."}
+                ? `${savedRunStatusCopy(selectedScopeStatus, relatedScopeStatuses)} Run review for this day to get mistake cards and practice positions.`
+                : savedRunStatusCopy(selectedScopeStatus, relatedScopeStatuses)}
           </p>
           {analysisReport ? (
             <>
@@ -2151,6 +2399,42 @@ export function ChessComAnalysisPanel() {
       weekKey: selectedWeek,
     });
   }, [analysisRevision, analysisSettings, loadedUsername, selectedWeek, summaries]);
+  const selectedDaySavedStatus = useMemo(() => {
+    if (!loadedUsername || !selectedDay) {
+      return null;
+    }
+
+    return summarizeCachedAnalysisStatus({
+      date: selectedDay.date,
+      games: selectedDay.games,
+      settings: analysisSettings,
+      username: loadedUsername,
+    });
+  }, [analysisRevision, analysisSettings, loadedUsername, selectedDay]);
+  const relatedSelectedDayStatuses = useMemo(() => {
+    if (!loadedUsername || !selectedDay) {
+      return [];
+    }
+
+    return readRelatedDailyAnalysisStatuses({ date: selectedDay.date, username: loadedUsername }).filter(
+      (status) => status.cacheKey !== selectedDaySavedStatus?.cacheKey,
+    );
+  }, [analysisRevision, loadedUsername, selectedDay, selectedDaySavedStatus?.cacheKey]);
+  const cachedSelectedDayReport = useMemo(() => {
+    if (!loadedUsername || !selectedDay) {
+      return null;
+    }
+
+    return readCachedDailyAnalysis(
+      buildDayAnalysisCacheKey({
+        date: selectedDay.date,
+        games: selectedDay.games,
+        settings: analysisSettings,
+        username: loadedUsername,
+      }),
+    );
+  }, [analysisRevision, analysisSettings, loadedUsername, selectedDay]);
+  const activeReviewReport = selectedAnalysisReport ?? cachedSelectedDayReport;
 
   const bumpAnalysisRevision = useCallback(() => {
     setAnalysisRevision((revision) => revision + 1);
@@ -2326,12 +2610,31 @@ export function ChessComAnalysisPanel() {
               ))}
             </select>
           </label>
+          <CoachStatusRow
+            activeDay={selectedDay}
+            fallbackGameCount={filteredGames.length}
+            relatedStatuses={relatedSelectedDayStatuses}
+            savedStatus={selectedDaySavedStatus}
+            selectedTimeClass={selectedTimeClass}
+            username={loadedUsername}
+          />
+          <CoachNextStepPanel
+            activeDay={selectedDay}
+            onViewChange={setActiveView}
+            playerLevel={playerLevel}
+            reviewReport={activeReviewReport}
+            savedStatus={selectedDaySavedStatus}
+            selectedTimeClass={selectedTimeClass}
+            weeklyReport={weeklyReport}
+          />
           <AnalysisViewNav activeView={activeView} onChange={setActiveView} playerLevel={playerLevel} />
           <div className="analysis-view-panel">
             {filteredGames.length === 0 ? (
               <section className="analysis-placeholder-panel">
-                <h3>No {selectedTimeClass} games loaded</h3>
-                <p className="helper-text">Try another time control or load more archives.</p>
+                <h3>No {timeControlLabel(selectedTimeClass)} games found</h3>
+                <p className="helper-text">
+                  No loaded games match this time control and rated-only setting. Try another time control, include unrated games, or load more archives.
+                </p>
               </section>
             ) : null}
             {activeView === "rating" && filteredGames.length > 0 ? (
@@ -2355,7 +2658,7 @@ export function ChessComAnalysisPanel() {
             ) : null}
             {activeView === "analysis" && selectedDay ? (
               <SelectedDayReview
-                analysisReport={selectedAnalysisReport}
+                analysisReport={activeReviewReport}
                 analysisSettings={analysisSettings}
                 day={selectedDay}
                 days={summaries}
@@ -2370,10 +2673,16 @@ export function ChessComAnalysisPanel() {
                 username={loadedUsername}
               />
             ) : null}
+            {activeView === "analysis" && filteredGames.length > 0 && !selectedDay ? (
+              <section className="analysis-placeholder-panel">
+                <h3>No selected day</h3>
+                <p className="helper-text">Choose a day from Rating, or reload games so the app can select the most recent active day.</p>
+              </section>
+            ) : null}
             {activeView === "critical" ? (
               <CriticalMovesSection
                 analysisSettings={analysisSettings}
-                moves={selectedAnalysisReport?.criticalMoves ?? []}
+                moves={activeReviewReport?.criticalMoves ?? []}
                 playerLevel={playerLevel}
                 showEngineDetails={showEngineDetails}
               />
@@ -2382,7 +2691,7 @@ export function ChessComAnalysisPanel() {
               <HomeworkSection
                 analysisSettings={analysisSettings}
                 playerLevel={playerLevel}
-                puzzles={selectedAnalysisReport?.homeworkPuzzles ?? []}
+                puzzles={activeReviewReport?.homeworkPuzzles ?? []}
                 showEngineDetails={showEngineDetails}
               />
             ) : null}
@@ -2404,6 +2713,12 @@ export function ChessComAnalysisPanel() {
                 username={loadedUsername}
                 weeks={availableWeeks}
               />
+            ) : null}
+            {activeView === "weekly" && !weeklyReport ? (
+              <section className="analysis-placeholder-panel">
+                <h3>No weekly plan yet</h3>
+                <p className="helper-text">Load games with at least one active day for the selected time control, then the weekly plan can show coverage.</p>
+              </section>
             ) : null}
           </div>
         </>
