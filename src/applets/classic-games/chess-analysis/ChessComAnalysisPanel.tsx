@@ -1,3 +1,4 @@
+import { Chess, type Square as ChessSquare } from "chess.js";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
@@ -14,7 +15,7 @@ import {
   type SelectedDayAnalysisProgress,
   type SelectedDayAnalysisSettings,
 } from "./chessSelectedDayAnalysis";
-import { createStockfishEngine, type ChessStockfishEngine } from "./chessStockfishEngine";
+import { createStockfishEngine, type ChessStockfishEngine, type StockfishTopMove } from "./chessStockfishEngine";
 import {
   buildWeeklyReport,
   formatWeeklyReportMarkdown,
@@ -26,6 +27,7 @@ import {
 } from "./chessWeeklyReport";
 import type {
   ChessComTrackedTimeClass,
+  ChessPlayerColor,
   CriticalMoveAnalysis,
   DailyAnalysisStatus,
   DailyChessSummary,
@@ -37,15 +39,15 @@ import type {
 } from "./chessReportTypes";
 
 const timeClasses: ChessComTrackedTimeClass[] = ["bullet", "blitz", "rapid"];
-type AnalysisView = "analysis" | "rating" | "critical" | "homework" | "change" | "weekly";
+type AnalysisView = "analysis" | "rating" | "critical" | "homework" | "weekly";
+type PlayerLevel = "beginner" | "intermediate" | "advanced";
 
-const analysisViews: { id: AnalysisView; label: string }[] = [
-  { id: "analysis", label: "Analysis" },
-  { id: "rating", label: "Rating" },
-  { id: "change", label: "Rating Change" },
-  { id: "critical", label: "Critical Moves" },
-  { id: "homework", label: "Homework" },
-  { id: "weekly", label: "Weekly Report" },
+const analysisViews: { id: AnalysisView; labels: Record<PlayerLevel, string> }[] = [
+  { id: "analysis", labels: { advanced: "Analysis", beginner: "Coach Review", intermediate: "Review" } },
+  { id: "rating", labels: { advanced: "Rating Trend", beginner: "Rating", intermediate: "Rating Trend" } },
+  { id: "critical", labels: { advanced: "Critical Moves", beginner: "Mistakes", intermediate: "Critical Moves" } },
+  { id: "homework", labels: { advanced: "Homework", beginner: "Practice", intermediate: "Homework" } },
+  { id: "weekly", labels: { advanced: "Weekly Report", beginner: "Weekly Plan", intermediate: "Weekly Report" } },
 ];
 const boardFiles = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const fenPieceGlyphs: Record<string, string> = {
@@ -61,6 +63,14 @@ const fenPieceGlyphs: Record<string, string> = {
   p: "♟",
   q: "♛",
   r: "♜",
+};
+const pieceNames: Record<string, string> = {
+  b: "bishop",
+  k: "king",
+  n: "knight",
+  p: "pawn",
+  q: "queen",
+  r: "rook",
 };
 
 function formatRating(value: number | null): string {
@@ -186,6 +196,374 @@ function moveSquares(move: string): Set<string> {
   }
 
   return new Set([move.slice(0, 2), move.slice(2, 4)]);
+}
+
+function legalMoveSquares(game: Chess, square: ChessSquare | null): Set<string> {
+  if (!square) {
+    return new Set();
+  }
+
+  return new Set(game.moves({ square, verbose: true }).map((move) => move.to));
+}
+
+function squareAt(rowIndex: number, colIndex: number, orientation: "black" | "white"): ChessSquare {
+  const rank = orientation === "black" ? rowIndex + 1 : 8 - rowIndex;
+  const file = orientation === "black" ? boardFiles[7 - colIndex] : boardFiles[colIndex];
+  return `${file}${rank}` as ChessSquare;
+}
+
+function formatUciMove(move: string): string {
+  if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(move)) {
+    return move || "n/a";
+  }
+
+  const promotion = move[4] ? `=${move[4].toUpperCase()}` : "";
+  return `${move.slice(0, 2)}-${move.slice(2, 4)}${promotion}`;
+}
+
+function formatMoveLabel(fen: string, uciMove: string, fallback?: string): string {
+  if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(uciMove)) {
+    return fallback ?? uciMove ?? "n/a";
+  }
+
+  try {
+    const game = new Chess(fen);
+    const move = game.move({
+      from: uciMove.slice(0, 2) as ChessSquare,
+      promotion: uciMove[4] ?? "q",
+      to: uciMove.slice(2, 4) as ChessSquare,
+    });
+    return move?.san ?? fallback ?? formatUciMove(uciMove);
+  } catch {
+    return fallback ?? formatUciMove(uciMove);
+  }
+}
+
+function sideLabel(color: ChessPlayerColor): string {
+  return color === "white" ? "White" : "Black";
+}
+
+function evaluationToCentipawns(evaluation: EngineEvaluation): number {
+  return evaluation.type === "mate" ? Math.sign(evaluation.value || 1) * 100000 : evaluation.value;
+}
+
+function materialBalance(fen: string, side: ChessPlayerColor): number {
+  const pieceValues: Record<string, number> = {
+    b: 330,
+    k: 0,
+    n: 320,
+    p: 100,
+    q: 900,
+    r: 500,
+  };
+  const game = new Chess(fen);
+  return game
+    .board()
+    .flat()
+    .filter(Boolean)
+    .reduce((total, piece) => {
+      if (!piece) {
+        return total;
+      }
+      const value = pieceValues[piece.type] ?? 0;
+      const isPlayerPiece = side === "white" ? piece.color === "w" : piece.color === "b";
+      return total + (isPlayerPiece ? value : -value);
+    }, 0);
+}
+
+function fenAfterMove(fen: string, move: string): string | null {
+  if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(move)) {
+    return null;
+  }
+
+  try {
+    const game = new Chess(fen);
+    const madeMove = game.move({
+      from: move.slice(0, 2) as ChessSquare,
+      promotion: move[4] ?? "q",
+      to: move.slice(2, 4) as ChessSquare,
+    });
+    return madeMove ? game.fen() : null;
+  } catch {
+    return null;
+  }
+}
+
+function explainCriticalMove(move: CriticalMoveAnalysis): string {
+  const bestSan = formatMoveLabel(move.fenBefore, move.bestMove);
+  const bestAfterFen = fenAfterMove(move.fenBefore, move.bestMove);
+  if (bestAfterFen && materialBalance(bestAfterFen, move.sideToMove) - materialBalance(move.fenAfter, move.sideToMove) >= 300) {
+    return `Your move dropped material. ${sideLabel(move.sideToMove)} had a better move with ${bestSan}.`;
+  }
+
+  if (move.impact?.theme === "missed mate" || (move.mateSwing !== null && move.mateSwing > 0)) {
+    return `Your move missed a mating resource or defense. Stockfish preferred ${bestSan}.`;
+  }
+
+  if (move.impact?.theme === "missed win") {
+    return `Your move gave up a winning advantage. Stockfish preferred ${bestSan}.`;
+  }
+
+  if (bestSan.includes("x")) {
+    return `Your move missed a stronger capture. Stockfish preferred ${bestSan}.`;
+  }
+
+  if (move.centipawnLoss >= 600) {
+    return `Your move caused a large engine swing. Stockfish preferred ${bestSan}.`;
+  }
+
+  return `Your move missed Stockfish's stronger move: ${bestSan}.`;
+}
+
+function shortCoachSummary(move: CriticalMoveAnalysis): string {
+  const before = evaluationToCentipawns(move.evalBefore);
+  const after = evaluationToCentipawns(move.evalAfter);
+  if (before >= 300 && after < 150) {
+    return "This position moved from clearly better to much less comfortable.";
+  }
+
+  if (move.centipawnLoss >= 600) {
+    return "This was the biggest kind of swing to review slowly.";
+  }
+
+  return "The review goal is to compare your move with the engine's simpler improvement.";
+}
+
+function homeworkHintOne(puzzle: HomeworkPuzzleCandidate): string {
+  try {
+    const game = new Chess(puzzle.fen);
+    const from = puzzle.bestMove.slice(0, 2) as ChessSquare;
+    const piece = game.get(from);
+    const pieceName = piece ? pieceNames[piece.type] ?? "piece" : "piece";
+    return `Hint 1: Look at the ${pieceName} on ${from}.`;
+  } catch {
+    return `Hint 1: The key square starts on ${puzzle.bestMove.slice(0, 2)}.`;
+  }
+}
+
+function homeworkHintTwo(puzzle: HomeworkPuzzleCandidate): string {
+  const bestSan = formatMoveLabel(puzzle.fen, puzzle.bestMove);
+  return `Hint 2: Compare your game move ${puzzle.playedMove} with Stockfish's candidate ${bestSan}.`;
+}
+
+function formatPvLine(fen: string, line: string[]): string {
+  try {
+    const game = new Chess(fen);
+    return line
+      .slice(0, 5)
+      .map((uciMove) => {
+        const move = game.move({
+          from: uciMove.slice(0, 2) as ChessSquare,
+          promotion: uciMove[4] ?? "q",
+          to: uciMove.slice(2, 4) as ChessSquare,
+        });
+        return move?.san ?? formatUciMove(uciMove);
+      })
+      .join(" ");
+  } catch {
+    return line.slice(0, 5).map(formatUciMove).join(" ");
+  }
+}
+
+function topMoveEvaluationLabel(move: StockfishTopMove): string {
+  return formatEvaluation(move.evaluation);
+}
+
+function PlayableAnalysisBoard({
+  analysisSettings,
+  allowEnginePanel = false,
+  bestMove,
+  fen,
+  orientation,
+  playedMove,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  allowEnginePanel?: boolean;
+  bestMove?: string;
+  fen: string;
+  orientation: "black" | "white";
+  playedMove?: string;
+}) {
+  const engineRef = useRef<ChessStockfishEngine | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [game, setGame] = useState(() => new Chess(fen));
+  const [selectedSquare, setSelectedSquare] = useState<ChessSquare | null>(null);
+  const [lastMove, setLastMove] = useState<string | undefined>(undefined);
+  const [topMoves, setTopMoves] = useState<StockfishTopMove[]>([]);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisRunning, setAnalysisRunning] = useState(false);
+  const currentFen = game.fen();
+  const legalTargets = useMemo(() => legalMoveSquares(game, selectedSquare), [game, selectedSquare]);
+  const topMoveSquares = useMemo(() => moveSquares(topMoves[0]?.move ?? ""), [topMoves]);
+
+  useEffect(() => {
+    abortControllerRef.current?.abort();
+    engineRef.current?.stop();
+    setGame(new Chess(fen));
+    setSelectedSquare(null);
+    setLastMove(undefined);
+    setTopMoves([]);
+    setAnalysisError(null);
+    setAnalysisRunning(false);
+  }, [fen]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      engineRef.current?.dispose();
+    };
+  }, []);
+
+  function resetPosition() {
+    abortControllerRef.current?.abort();
+    engineRef.current?.stop();
+    setGame(new Chess(fen));
+    setSelectedSquare(null);
+    setLastMove(undefined);
+    setTopMoves([]);
+    setAnalysisError(null);
+    setAnalysisRunning(false);
+  }
+
+  function handleSquareClick(square: ChessSquare) {
+    const piece = game.get(square);
+    if (selectedSquare && legalTargets.has(square)) {
+      const nextGame = new Chess(game.fen());
+      const move = nextGame.move({
+        from: selectedSquare,
+        promotion: "q",
+        to: square,
+      });
+      if (move) {
+        setGame(nextGame);
+        setLastMove(`${move.from}${move.to}${move.promotion ?? ""}`);
+        setSelectedSquare(null);
+        setTopMoves([]);
+        setAnalysisError(null);
+      }
+      return;
+    }
+
+    if (piece && piece.color === game.turn()) {
+      setSelectedSquare(square);
+      return;
+    }
+
+    setSelectedSquare(null);
+  }
+
+  async function analyzeCurrentPosition() {
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    engineRef.current?.dispose();
+    engineRef.current = createStockfishEngine();
+    setAnalysisError(null);
+    setAnalysisRunning(true);
+
+    try {
+      const moves = await engineRef.current.analyzeTopMoves(game.fen(), {
+        depth: analysisSettings.depth,
+        lineCount: 3,
+        moveTimeMs: analysisSettings.moveTimeMs,
+        signal: abortController.signal,
+      });
+      if (abortControllerRef.current !== abortController) {
+        return;
+      }
+      setTopMoves(moves);
+    } catch (error) {
+      if (abortControllerRef.current !== abortController) {
+        return;
+      }
+      setAnalysisError(error instanceof Error ? error.message : "Could not analyze this position.");
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        setAnalysisRunning(false);
+      }
+    }
+  }
+
+  const boardRows = Array.from({ length: 8 }, (_, rowIndex) =>
+    Array.from({ length: 8 }, (_, colIndex) => squareAt(rowIndex, colIndex, orientation)),
+  );
+  const highlightedPlayed = moveSquares(playedMove ?? "");
+  const highlightedBest = moveSquares(bestMove ?? "");
+  const highlightedLast = moveSquares(lastMove ?? "");
+
+  return (
+    <div className="playable-analysis-board">
+      <div className="fen-board-wrap large" aria-label="Playable chess analysis board">
+        <div className="fen-board interactive">
+          {boardRows.map((row, rowIndex) =>
+            row.map((square, colIndex) => {
+              const piece = game.get(square);
+              const isSelected = selectedSquare === square;
+              const isLegal = legalTargets.has(square);
+              const isPlayed = highlightedPlayed.has(square) || highlightedLast.has(square);
+              const isBest = highlightedBest.has(square) || topMoveSquares.has(square);
+              const rank = square[1];
+              const file = square[0];
+
+              return (
+                <button
+                  aria-label={`${square}${piece ? ` ${piece.color === "w" ? "white" : "black"} ${piece.type}` : " empty"}`}
+                  className={`fen-square ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${isPlayed ? "played" : ""} ${isBest ? "best" : ""} ${isSelected ? "selected" : ""} ${isLegal ? "legal" : ""}`}
+                  key={square}
+                  onClick={() => handleSquareClick(square)}
+                  type="button"
+                >
+                  {colIndex === 0 ? <span className="fen-rank-label">{rank}</span> : null}
+                  {rowIndex === 7 ? <span className="fen-file-label">{file}</span> : null}
+                  {piece ? fenPieceGlyphs[piece.color === "w" ? piece.type.toUpperCase() : piece.type] : ""}
+                  {isLegal ? <span className="fen-legal-dot" aria-hidden="true" /> : null}
+                </button>
+              );
+            }),
+          )}
+        </div>
+      </div>
+      <div className="playable-board-actions">
+        {allowEnginePanel ? (
+          <button className="secondary-button primary-action" disabled={analysisRunning} onClick={analyzeCurrentPosition} type="button">
+            {analysisRunning ? "Analyzing" : "Analyze position"}
+          </button>
+        ) : null}
+        <button className="secondary-button" disabled={analysisRunning} onClick={resetPosition} type="button">
+          Reset position
+        </button>
+      </div>
+      <div className="position-status-row">
+        <span>{game.turn() === "w" ? "White" : "Black"} to move</span>
+        {lastMove ? <span>Last move {formatUciMove(lastMove)}</span> : null}
+        {game.isCheck() ? <span>Check</span> : null}
+        {game.isGameOver() ? <span>Game over</span> : null}
+      </div>
+      {analysisError ? <p className="error-text">Stockfish analysis unavailable. {analysisError}</p> : null}
+      {allowEnginePanel ? (
+        <div className="top-move-panel" aria-label="Top engine moves">
+          <h4>Top 3 moves for current position</h4>
+          {topMoves.length > 0 ? (
+            <ol>
+              {topMoves.map((move) => (
+                <li key={`${move.rank}-${move.move}`}>
+                  <strong>#{move.rank} {formatMoveLabel(currentFen, move.move)}</strong>
+                  <span>{topMoveEvaluationLabel(move)}</span>
+                  <small>{formatPvLine(currentFen, move.line)}</small>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="helper-text">
+              {analysisRunning
+                ? "Analyzing top moves for this board position."
+                : "Use this only when you want extra Stockfish lines for the current board position."}
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function dailyNetChange(day: DailyChessSummary): number | null {
@@ -373,9 +751,11 @@ function DaySummaryButton({
 function AnalysisViewNav({
   activeView,
   onChange,
+  playerLevel,
 }: {
   activeView: AnalysisView;
   onChange: (view: AnalysisView) => void;
+  playerLevel: PlayerLevel;
 }) {
   return (
     <nav className="analysis-view-nav" aria-label="Chess.com analysis sections">
@@ -387,14 +767,37 @@ function AnalysisViewNav({
           onClick={() => onChange(view.id)}
           type="button"
         >
-          {view.label}
+          {view.labels[playerLevel]}
         </button>
       ))}
     </nav>
   );
 }
 
-function CriticalMoveList({ moves }: { moves: CriticalMoveAnalysis[] }) {
+function CopyTextButton({ label, text }: { label: string; text: string }) {
+  const [status, setStatus] = useState<string | null>(null);
+
+  async function copyText() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus("Copied");
+      window.setTimeout(() => setStatus(null), 1600);
+    } catch {
+      setStatus("Copy unavailable");
+    }
+  }
+
+  return (
+    <span className="copy-action-wrap">
+      <button className="secondary-button" onClick={copyText} type="button">
+        {label}
+      </button>
+      {status ? <small>{status}</small> : null}
+    </span>
+  );
+}
+
+function CriticalMoveList({ moves, showEngineDetails }: { moves: CriticalMoveAnalysis[]; showEngineDetails: boolean }) {
   if (moves.length === 0) {
     return <p className="helper-text">No critical moments found yet.</p>;
   }
@@ -409,19 +812,23 @@ function CriticalMoveList({ moves }: { moves: CriticalMoveAnalysis[] }) {
               <strong>
                 Move {move.moveNumber}: {move.playedMove}
               </strong>
-              <span>{formatCentipawnLoss(move.centipawnLoss)}</span>
+              {showEngineDetails ? <span>{formatCentipawnLoss(move.centipawnLoss)}</span> : null}
             </div>
             <span className={`impact-pill impact-${move.impact?.severity ?? "minor"}`}>
               {move.impact?.label ?? "Engine improvement"}
             </span>
+            <p>{explainCriticalMove(move)}</p>
             <p>
-              Position before the move. Played {move.playedMoveUci}; correct move {move.bestMove}.
+              Played {move.playedMove}; Stockfish preferred {formatMoveLabel(move.fenBefore, move.bestMove)}.
             </p>
-            <p>
-              Player-perspective eval before {formatEvaluation(move.evalBefore)}, after played move{" "}
-              {formatEvaluation(move.evalAfter)}.
-            </p>
-            <code>{move.fenBefore}</code>
+            {showEngineDetails ? (
+              <>
+                <p>
+                  Eval before {formatEvaluation(move.evalBefore)}, after played move {formatEvaluation(move.evalAfter)}.
+                </p>
+                <code>{move.fenBefore}</code>
+              </>
+            ) : null}
           </div>
         </li>
       ))}
@@ -429,45 +836,99 @@ function CriticalMoveList({ moves }: { moves: CriticalMoveAnalysis[] }) {
   );
 }
 
-function FocusedCriticalMove({ move }: { move: CriticalMoveAnalysis }) {
+function FocusedCriticalMove({
+  analysisSettings,
+  move,
+  playerLevel,
+  showEngineDetails,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  move: CriticalMoveAnalysis;
+  playerLevel: PlayerLevel;
+  showEngineDetails: boolean;
+}) {
+  const [positionView, setPositionView] = useState<"after" | "before">("before");
+  const bestMoveSan = formatMoveLabel(move.fenBefore, move.bestMove);
+  const boardFen = positionView === "before" ? move.fenBefore : move.fenAfter;
+  const allowEnginePanel = playerLevel === "advanced" || showEngineDetails;
+
+  useEffect(() => {
+    setPositionView("before");
+  }, [move]);
+
   return (
     <article className="focused-review-card">
-      <FenBoard bestMove={move.bestMove} fen={move.fenBefore} orientation={move.sideToMove} playedMove={move.playedMoveUci} size="large" />
+      <PlayableAnalysisBoard
+        analysisSettings={analysisSettings}
+        allowEnginePanel={allowEnginePanel}
+        bestMove={positionView === "before" ? move.bestMove : undefined}
+        fen={boardFen}
+        orientation={move.sideToMove}
+        playedMove={positionView === "before" ? move.playedMoveUci : undefined}
+      />
       <div className="focused-review-copy">
         <div className="card-topline">
           <div>
-            <p className="eyebrow">Critical move #{move.moveNumber}</p>
+            <p className="eyebrow">{playerLevel === "beginner" ? "Mistake" : "Critical move"} #{move.moveNumber}</p>
             <h3>Move {move.moveNumber}: {move.playedMove}</h3>
           </div>
           <span className={`impact-pill impact-${move.impact?.severity ?? "minor"}`}>
             {move.impact?.label ?? "Engine improvement"}
           </span>
         </div>
-        <dl className="move-detail-grid">
+        <p className="coach-explanation">{explainCriticalMove(move)}</p>
+        <p>{shortCoachSummary(move)}</p>
+        <div className="move-replay-controls" aria-label="Move replay controls">
+          <button
+            aria-pressed={positionView === "before"}
+            className={positionView === "before" ? "selected" : ""}
+            onClick={() => setPositionView("before")}
+            type="button"
+          >
+            Before move
+          </button>
+          <button
+            aria-pressed={positionView === "after"}
+            className={positionView === "after" ? "selected" : ""}
+            onClick={() => setPositionView("after")}
+            type="button"
+          >
+            After your move
+          </button>
+        </div>
+        <dl className="move-detail-grid coach-detail-grid">
           <div>
             <dt>Played</dt>
-            <dd>{move.playedMoveUci}</dd>
+            <dd>{move.playedMove}</dd>
           </div>
           <div>
-            <dt>Best move</dt>
-            <dd>{move.bestMove}</dd>
+            <dt>Coach move</dt>
+            <dd>{bestMoveSan}</dd>
           </div>
-          <div>
-            <dt>Eval before</dt>
-            <dd>{formatEvaluation(move.evalBefore)}</dd>
-          </div>
-          <div>
-            <dt>Eval after</dt>
-            <dd>{formatEvaluation(move.evalAfter)}</dd>
-          </div>
-          <div>
-            <dt>Loss</dt>
-            <dd>{formatCentipawnLoss(move.centipawnLoss)}</dd>
-          </div>
+          {showEngineDetails || playerLevel === "advanced" ? (
+            <>
+              <div>
+                <dt>Loss</dt>
+                <dd>{formatCentipawnLoss(move.centipawnLoss)}</dd>
+              </div>
+              <div>
+                <dt>Eval change</dt>
+                <dd>{formatEvaluation(move.evalBefore)} to {formatEvaluation(move.evalAfter)}</dd>
+              </div>
+            </>
+          ) : null}
         </dl>
-        <p>
-          Position before the played move. Browser Stockfish preferred {move.bestMove}; the played move {move.playedMoveUci} changed the player-perspective evaluation from {formatEvaluation(move.evalBefore)} to {formatEvaluation(move.evalAfter)}.
-        </p>
+        {showEngineDetails || playerLevel === "advanced" ? (
+          <div className="engine-detail-box">
+            <p>
+              Browser Stockfish preferred {bestMoveSan} ({move.bestMove}); the played move {move.playedMove} ({move.playedMoveUci}) changed the player-perspective evaluation from {formatEvaluation(move.evalBefore)} to {formatEvaluation(move.evalAfter)}.
+            </p>
+            <code>{move.fenBefore}</code>
+            <div className="copy-action-row">
+              <CopyTextButton label="Copy FEN" text={move.fenBefore} />
+            </div>
+          </div>
+        ) : null}
         <a className="source-game-link" href={move.gameUrl} target="_blank" rel="noreferrer">
           Source game
         </a>
@@ -476,7 +937,17 @@ function FocusedCriticalMove({ move }: { move: CriticalMoveAnalysis }) {
   );
 }
 
-function CriticalMovesSection({ moves }: { moves: CriticalMoveAnalysis[] }) {
+function CriticalMovesSection({
+  analysisSettings,
+  moves,
+  playerLevel,
+  showEngineDetails,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  moves: CriticalMoveAnalysis[];
+  playerLevel: PlayerLevel;
+  showEngineDetails: boolean;
+}) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const selectedMove = moves[Math.min(selectedIndex, Math.max(0, moves.length - 1))] ?? null;
 
@@ -487,19 +958,24 @@ function CriticalMovesSection({ moves }: { moves: CriticalMoveAnalysis[] }) {
   if (!selectedMove) {
     return (
       <section className="analysis-placeholder-panel">
-        <h3>Critical Moves</h3>
-        <p className="helper-text">Run Analysis for a selected date or game to populate critical moves.</p>
+        <h3>{playerLevel === "beginner" ? "Mistakes" : "Critical Moves"}</h3>
+        <p className="helper-text">Run review for a selected date or game to populate coach moments.</p>
       </section>
     );
   }
 
   return (
-    <section className="analysis-focus-section" aria-label="Critical Moves">
+    <section className="analysis-focus-section" aria-label={playerLevel === "beginner" ? "Mistakes" : "Critical Moves"}>
       <div className="analysis-section-heading">
-        <p className="eyebrow">Critical Moves</p>
-        <h3>Top engine-impact moments</h3>
+        <p className="eyebrow">{playerLevel === "beginner" ? "Mistakes" : "Critical Moves"}</p>
+        <h3>{playerLevel === "beginner" ? "Moves to review first" : "Top engine-impact moments"}</h3>
       </div>
-      <FocusedCriticalMove move={selectedMove} />
+      <FocusedCriticalMove
+        analysisSettings={analysisSettings}
+        move={selectedMove}
+        playerLevel={playerLevel}
+        showEngineDetails={showEngineDetails}
+      />
       {moves.length > 1 ? (
         <div className="selectable-review-list">
           {moves.map((move, index) => (
@@ -511,7 +987,10 @@ function CriticalMovesSection({ moves }: { moves: CriticalMoveAnalysis[] }) {
               type="button"
             >
               <strong>#{index + 1} Move {move.moveNumber}: {move.playedMove}</strong>
-              <span>{move.impact?.label ?? "Engine improvement"} · {formatCentipawnLoss(move.centipawnLoss)}</span>
+              <span>
+                {move.impact?.label ?? "Engine improvement"}
+                {showEngineDetails || playerLevel === "advanced" ? ` · ${formatCentipawnLoss(move.centipawnLoss)}` : ""}
+              </span>
             </button>
           ))}
         </div>
@@ -520,7 +999,17 @@ function CriticalMovesSection({ moves }: { moves: CriticalMoveAnalysis[] }) {
   );
 }
 
-function CriticalMovePager({ moves }: { moves: CriticalMoveAnalysis[] }) {
+function CriticalMovePager({
+  analysisSettings,
+  moves,
+  playerLevel,
+  showEngineDetails,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  moves: CriticalMoveAnalysis[];
+  playerLevel: PlayerLevel;
+  showEngineDetails: boolean;
+}) {
   const [index, setIndex] = useState(0);
   const boundedIndex = Math.min(index, Math.max(0, moves.length - 1));
   const selectedMove = moves[boundedIndex] ?? null;
@@ -549,12 +1038,17 @@ function CriticalMovePager({ moves }: { moves: CriticalMoveAnalysis[] }) {
           Next
         </button>
       </div>
-      <FocusedCriticalMove move={selectedMove} />
+      <FocusedCriticalMove
+        analysisSettings={analysisSettings}
+        move={selectedMove}
+        playerLevel={playerLevel}
+        showEngineDetails={showEngineDetails}
+      />
     </div>
   );
 }
 
-function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
+function HomeworkPuzzleList({ puzzles, showEngineDetails }: { puzzles: HomeworkPuzzleCandidate[]; showEngineDetails: boolean }) {
   if (puzzles.length === 0) {
     return <p className="helper-text">No homework puzzles generated yet.</p>;
   }
@@ -563,17 +1057,14 @@ function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] })
     <ol className="homework-puzzle-list">
       {puzzles.map((puzzle) => (
         <li key={`${puzzle.gameUrl}-${puzzle.fen}`}>
-          <FenBoard bestMove={puzzle.bestMove} fen={puzzle.fen} orientation={puzzle.sideToMove} />
+          <FenBoard fen={puzzle.fen} orientation={puzzle.sideToMove} />
           <div className="analysis-card-copy">
-            <strong>Find the best move for {puzzle.sideToMove}.</strong>
+            <strong>Find the best move for {sideLabel(puzzle.sideToMove)}.</strong>
             <span className={`impact-pill impact-${puzzle.impact?.severity ?? "minor"}`}>
               {puzzle.impact?.label ?? "Engine improvement"}
             </span>
-            <p>
-              Played: {puzzle.playedMove}. Correct move: {puzzle.bestMove}.
-            </p>
             <p>{puzzle.explanation}</p>
-            <code>{puzzle.fen}</code>
+            {showEngineDetails ? <code>{puzzle.fen}</code> : null}
           </div>
         </li>
       ))}
@@ -581,35 +1072,84 @@ function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] })
   );
 }
 
-function FocusedHomeworkPuzzle({ puzzle }: { puzzle: HomeworkPuzzleCandidate }) {
+function FocusedHomeworkPuzzle({
+  analysisSettings,
+  playerLevel,
+  puzzle,
+  showEngineDetails,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  playerLevel: PlayerLevel;
+  puzzle: HomeworkPuzzleCandidate;
+  showEngineDetails: boolean;
+}) {
   const [revealed, setRevealed] = useState(false);
+  const [hintCount, setHintCount] = useState(0);
+  const [status, setStatus] = useState<"active" | "skipped" | "solved">("active");
+  const bestMoveSan = formatMoveLabel(puzzle.fen, puzzle.bestMove);
+  const allowEnginePanel = playerLevel === "advanced" || showEngineDetails;
 
   useEffect(() => {
     setRevealed(false);
+    setHintCount(0);
+    setStatus("active");
   }, [puzzle]);
 
   return (
     <article className="focused-review-card">
-      <FenBoard bestMove={revealed ? puzzle.bestMove : undefined} fen={puzzle.fen} orientation={puzzle.sideToMove} size="large" />
+      <PlayableAnalysisBoard
+        analysisSettings={analysisSettings}
+        allowEnginePanel={allowEnginePanel}
+        bestMove={revealed ? puzzle.bestMove : undefined}
+        fen={puzzle.fen}
+        orientation={puzzle.sideToMove}
+      />
       <div className="focused-review-copy">
         <div className="card-topline">
           <div>
             <p className="eyebrow">Homework</p>
-            <h3>Find the best move for {puzzle.sideToMove}</h3>
+            <h3>Find the best move for {sideLabel(puzzle.sideToMove)}</h3>
           </div>
           <span className={`impact-pill impact-${puzzle.impact?.severity ?? "minor"}`}>
             {puzzle.impact?.label ?? "Engine improvement"}
           </span>
         </div>
         <p>{puzzle.explanation}</p>
-        <button className="secondary-button primary-action" onClick={() => setRevealed((current) => !current)} type="button">
-          {revealed ? "Hide answer" : "Reveal answer"}
-        </button>
+        <div className={`homework-state-pill state-${status}`}>
+          {status === "solved" ? "Solved locally" : status === "skipped" ? "Skipped locally" : "Ready to solve"}
+        </div>
+        <div className="homework-action-row">
+          <button className="secondary-button" disabled={hintCount >= 2} onClick={() => setHintCount((current) => Math.min(2, current + 1))} type="button">
+            {hintCount === 0 ? "Hint" : "Next hint"}
+          </button>
+          <button className="secondary-button primary-action" onClick={() => setRevealed((current) => !current)} type="button">
+            {revealed ? "Hide answer" : "Reveal answer"}
+          </button>
+          <button className="secondary-button" onClick={() => setStatus("solved")} type="button">
+            Mark solved
+          </button>
+          <button className="secondary-button" onClick={() => setStatus("skipped")} type="button">
+            Skip
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => {
+              setHintCount(0);
+              setRevealed(false);
+              setStatus("active");
+            }}
+            type="button"
+          >
+            Retry
+          </button>
+        </div>
+        {hintCount >= 1 ? <p className="homework-hint">{homeworkHintOne(puzzle)}</p> : null}
+        {hintCount >= 2 ? <p className="homework-hint">{homeworkHintTwo(puzzle)}</p> : null}
         {revealed ? (
           <dl className="move-detail-grid">
             <div>
               <dt>Best move</dt>
-              <dd>{puzzle.bestMove}</dd>
+              <dd>{bestMoveSan}</dd>
             </div>
             <div>
               <dt>Played</dt>
@@ -621,6 +1161,15 @@ function FocusedHomeworkPuzzle({ puzzle }: { puzzle: HomeworkPuzzleCandidate }) 
             </div>
           </dl>
         ) : null}
+        {showEngineDetails || playerLevel === "advanced" ? (
+          <div className="engine-detail-box">
+            <p>Engine move {puzzle.bestMove}; source position below.</p>
+            <code>{puzzle.fen}</code>
+            <div className="copy-action-row">
+              <CopyTextButton label="Copy FEN" text={puzzle.fen} />
+            </div>
+          </div>
+        ) : null}
         <a className="source-game-link" href={puzzle.gameUrl} target="_blank" rel="noreferrer">
           Source game
         </a>
@@ -629,7 +1178,17 @@ function FocusedHomeworkPuzzle({ puzzle }: { puzzle: HomeworkPuzzleCandidate }) 
   );
 }
 
-function HomeworkSection({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
+function HomeworkSection({
+  analysisSettings,
+  playerLevel,
+  puzzles,
+  showEngineDetails,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  playerLevel: PlayerLevel;
+  puzzles: HomeworkPuzzleCandidate[];
+  showEngineDetails: boolean;
+}) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const selectedPuzzle = puzzles[Math.min(selectedIndex, Math.max(0, puzzles.length - 1))] ?? null;
 
@@ -649,10 +1208,15 @@ function HomeworkSection({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
   return (
     <section className="analysis-focus-section" aria-label="Homework">
       <div className="analysis-section-heading">
-        <p className="eyebrow">Homework</p>
+        <p className="eyebrow">{playerLevel === "beginner" ? "Practice" : "Homework"}</p>
         <h3>Practice positions</h3>
       </div>
-      <FocusedHomeworkPuzzle puzzle={selectedPuzzle} />
+      <FocusedHomeworkPuzzle
+        analysisSettings={analysisSettings}
+        playerLevel={playerLevel}
+        puzzle={selectedPuzzle}
+        showEngineDetails={showEngineDetails}
+      />
       {puzzles.length > 1 ? (
         <div className="selectable-review-list">
           {puzzles.map((puzzle, index) => (
@@ -663,8 +1227,11 @@ function HomeworkSection({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
               onClick={() => setSelectedIndex(index)}
               type="button"
             >
-              <strong>#{index + 1} {puzzle.sideToMove} to move</strong>
-              <span>{puzzle.impact?.label ?? "Engine improvement"} · {formatCentipawnLoss(puzzle.centipawnLoss)}</span>
+              <strong>#{index + 1} {sideLabel(puzzle.sideToMove)} to move</strong>
+              <span>
+                {puzzle.impact?.label ?? "Engine improvement"}
+                {showEngineDetails || playerLevel === "advanced" ? ` · ${formatCentipawnLoss(puzzle.centipawnLoss)}` : ""}
+              </span>
             </button>
           ))}
         </div>
@@ -673,7 +1240,17 @@ function HomeworkSection({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
   );
 }
 
-function HomeworkPuzzlePager({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
+function HomeworkPuzzlePager({
+  analysisSettings,
+  playerLevel,
+  puzzles,
+  showEngineDetails,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  playerLevel: PlayerLevel;
+  puzzles: HomeworkPuzzleCandidate[];
+  showEngineDetails: boolean;
+}) {
   const [index, setIndex] = useState(0);
   const boundedIndex = Math.min(index, Math.max(0, puzzles.length - 1));
   const selectedPuzzle = puzzles[boundedIndex] ?? null;
@@ -702,7 +1279,12 @@ function HomeworkPuzzlePager({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }
           Next
         </button>
       </div>
-      <FocusedHomeworkPuzzle puzzle={selectedPuzzle} />
+      <FocusedHomeworkPuzzle
+        analysisSettings={analysisSettings}
+        playerLevel={playerLevel}
+        puzzle={selectedPuzzle}
+        showEngineDetails={showEngineDetails}
+      />
     </div>
   );
 }
@@ -726,15 +1308,112 @@ function WeeklyTimeClassCard({ summary }: { summary: WeeklyTimeClassSummary }) {
   );
 }
 
+function EngineSettingsControls({
+  analysisRunning,
+  analysisSettings,
+  onSettingChange,
+}: {
+  analysisRunning: boolean;
+  analysisSettings: SelectedDayAnalysisSettings;
+  onSettingChange: (key: keyof SelectedDayAnalysisSettings, value: number) => void;
+}) {
+  return (
+    <div className="analysis-settings-grid" aria-label="Stockfish analysis settings">
+      <label className="field">
+        <span>Depth</span>
+        <input
+          disabled={analysisRunning}
+          max={18}
+          min={1}
+          type="number"
+          value={analysisSettings.depth}
+          onChange={(event) => onSettingChange("depth", Number(event.target.value))}
+        />
+      </label>
+      <label className="field">
+        <span>Time / position (ms)</span>
+        <input
+          disabled={analysisRunning}
+          max={3000}
+          min={100}
+          step={100}
+          type="number"
+          value={analysisSettings.moveTimeMs}
+          onChange={(event) => onSettingChange("moveTimeMs", Number(event.target.value))}
+        />
+      </label>
+      <label className="field">
+        <span>Max games</span>
+        <input
+          disabled={analysisRunning}
+          max={8}
+          min={1}
+          type="number"
+          value={analysisSettings.maxGames}
+          onChange={(event) => onSettingChange("maxGames", Number(event.target.value))}
+        />
+      </label>
+      <label className="field">
+        <span>Max player moves</span>
+        <input
+          disabled={analysisRunning}
+          max={60}
+          min={1}
+          type="number"
+          value={analysisSettings.maxMoves}
+          onChange={(event) => onSettingChange("maxMoves", Number(event.target.value))}
+        />
+      </label>
+    </div>
+  );
+}
+
+function weeklyMainTakeaway(report: WeeklyReport, selectedTimeClass: ChessComTrackedTimeClass): string {
+  const summary = report.timeClassSummaries[selectedTimeClass];
+  if (summary.gamesPlayed === 0) {
+    return `No ${selectedTimeClass} games were loaded for this week.`;
+  }
+
+  const movement = summary.netChange ?? 0;
+  if (report.topCriticalMoves[0]) {
+    return `${timeControlLabel(selectedTimeClass)} moved ${formatNetChange(summary.netChange)}. The review priority is move ${report.topCriticalMoves[0].moveNumber}: ${explainCriticalMove(report.topCriticalMoves[0])}`;
+  }
+
+  if (movement > 0) {
+    return `${timeControlLabel(selectedTimeClass)} gained rating this week. Analyze one day to turn the result into specific practice.`;
+  }
+
+  if (movement < 0) {
+    return `${timeControlLabel(selectedTimeClass)} lost rating this week. Start by analyzing the largest down day.`;
+  }
+
+  return `${timeControlLabel(selectedTimeClass)} rating was steady. Analyze a day to find one concrete practice target.`;
+}
+
+function weeklyHomeworkPlan(report: WeeklyReport): string {
+  if (report.homeworkPuzzles.length > 0) {
+    const firstPuzzle = report.homeworkPuzzles[0];
+    return `Solve ${report.homeworkPuzzles.length} cached puzzle(s), starting with ${sideLabel(firstPuzzle.sideToMove)} to move from the biggest reviewed mistake.`;
+  }
+
+  if (report.analysisCoverage.analyzedDayCount === 0) {
+    return "Analyze one selected day, then solve the first generated homework puzzle.";
+  }
+
+  return "Review the cached critical move cards and re-run a missing day if you want more puzzle candidates.";
+}
+
 function WeeklyReportPanel({
   analysisSettings,
   onAnalysisReport,
   onCoverageChange,
   onSelectDay,
+  playerLevel,
   report,
   selectedTimeClass,
   selectedWeek,
   setSelectedWeek,
+  showEngineDetails,
   username,
   weeks,
 }: {
@@ -742,10 +1421,12 @@ function WeeklyReportPanel({
   onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
   onCoverageChange: () => void;
   onSelectDay: (date: string) => void;
+  playerLevel: PlayerLevel;
   report: WeeklyReport;
   selectedTimeClass: ChessComTrackedTimeClass;
   selectedWeek: string;
   setSelectedWeek: (week: string) => void;
+  showEngineDetails: boolean;
   username: string;
   weeks: string[];
 }) {
@@ -761,6 +1442,7 @@ function WeeklyReportPanel({
     report.analysisCoverage.days.find((status) => status.status === "failed") ??
     null;
   const selectedSummary = report.timeClassSummaries[selectedTimeClass];
+  const biggestMistake = report.topCriticalMoves[0] ?? null;
 
   useEffect(() => {
     return () => {
@@ -863,12 +1545,9 @@ function WeeklyReportPanel({
     <section className="weekly-report-panel" aria-label="Weekly Report">
       <div className="weekly-report-header">
         <div>
-          <p className="eyebrow">Weekly Report</p>
+          <p className="eyebrow">{playerLevel === "beginner" ? "Weekly Plan" : "Weekly Report"}</p>
           <h2>{timeControlLabel(selectedTimeClass)} · {getWeekLabel(report.weekKey)}</h2>
-          <p className="helper-text">
-            Fetched game and rating data covers loaded {selectedTimeClass} games in this week. Engine-analyzed data comes only from cached selected-day Stockfish runs for this time control.
-            Current cache lookup: depth {analysisSettings.depth}, {analysisSettings.moveTimeMs}ms, {analysisSettings.maxGames} game(s), {analysisSettings.maxMoves} move(s).
-          </p>
+          <p className="helper-text">{weeklyMainTakeaway(report, selectedTimeClass)}</p>
         </div>
         <label className="field weekly-selector">
           <span>Week</span>
@@ -880,6 +1559,34 @@ function WeeklyReportPanel({
             ))}
           </select>
         </label>
+      </div>
+      <div className="weekly-insight-grid">
+        <article>
+          <p className="eyebrow">Main takeaway</p>
+          <strong>{weeklyMainTakeaway(report, selectedTimeClass)}</strong>
+        </article>
+        <article>
+          <p className="eyebrow">Rating movement</p>
+          <strong className={`rating-delta ${ratingDeltaClass(selectedSummary.netChange)}`}>
+            {formatNetChange(selectedSummary.netChange)}
+          </strong>
+          <span>{selectedSummary.gamesPlayed} game(s), {selectedSummary.wins}-{selectedSummary.losses}-{selectedSummary.draws}</span>
+        </article>
+        <article>
+          <p className="eyebrow">Biggest reviewed mistake</p>
+          {biggestMistake ? (
+            <>
+              <strong>Move {biggestMistake.moveNumber}: {biggestMistake.playedMove}</strong>
+              <span>{explainCriticalMove(biggestMistake)}</span>
+            </>
+          ) : (
+            <span>Analyze a selected day to identify the biggest mistake.</span>
+          )}
+        </article>
+        <article>
+          <p className="eyebrow">Homework plan</p>
+          <strong>{weeklyHomeworkPlan(report)}</strong>
+        </article>
       </div>
       <div className="weekly-summary-grid">
         <WeeklyTimeClassCard summary={selectedSummary} />
@@ -894,12 +1601,15 @@ function WeeklyReportPanel({
           <p className={`rating-delta ${ratingDeltaClass(report.worstDay?.netChange ?? null)}`}>{report.worstDay ? formatNetChange(report.worstDay.netChange) : "No rating movement found."}</p>
         </article>
       </div>
-      <div className="weekly-coverage-row">
+      <div className="weekly-coverage-row secondary-detail">
         <span>Fetched game/rating data: {report.days.length} active day(s)</span>
         <span>
           Engine coverage: {report.analysisCoverage.analyzedDayCount}/{report.analysisCoverage.totalDayCount} day(s)
         </span>
         <span>Stockfish-analyzed games: {report.engineAnalyzedGameCount}</span>
+        {(showEngineDetails || playerLevel === "advanced") ? (
+          <span>Cache lookup d{analysisSettings.depth} / {analysisSettings.moveTimeMs}ms / {analysisSettings.maxGames} game(s) / {analysisSettings.maxMoves} move(s)</span>
+        ) : null}
       </div>
       <section className="weekly-analysis-queue" aria-label="Weekly analysis coverage">
         <div className="card-topline">
@@ -976,7 +1686,7 @@ function WeeklyReportPanel({
       </section>
       <div className="weekly-report-columns">
         <section className="analysis-placeholder-panel">
-          <h3>Recurring issue labels</h3>
+          <h3>Engine issue labels</h3>
           {report.themeCounts.length > 0 ? (
             <ul className="skipped-game-list">
               {report.themeCounts.map((theme) => (
@@ -988,12 +1698,22 @@ function WeeklyReportPanel({
           )}
         </section>
         <section className="analysis-placeholder-panel">
-          <h3>Top weekly critical moments</h3>
-          <CriticalMovePager moves={report.topCriticalMoves} />
+          <h3>{playerLevel === "beginner" ? "Top weekly mistakes" : "Top weekly critical moments"}</h3>
+          <CriticalMovePager
+            analysisSettings={analysisSettings}
+            moves={report.topCriticalMoves}
+            playerLevel={playerLevel}
+            showEngineDetails={showEngineDetails}
+          />
         </section>
         <section className="analysis-placeholder-panel">
           <h3>Weekly homework</h3>
-          <HomeworkPuzzlePager puzzles={report.homeworkPuzzles} />
+          <HomeworkPuzzlePager
+            analysisSettings={analysisSettings}
+            playerLevel={playerLevel}
+            puzzles={report.homeworkPuzzles}
+            showEngineDetails={showEngineDetails}
+          />
         </section>
       </div>
       <div className="chess-analysis-actions">
@@ -1015,6 +1735,9 @@ function SelectedDayReview({
   onAnalysisReport,
   onAnalysisStatusChange,
   onDateChange,
+  onViewChange,
+  playerLevel,
+  showEngineDetails,
   username,
 }: {
   analysisSettings: SelectedDayAnalysisSettings;
@@ -1025,6 +1748,9 @@ function SelectedDayReview({
   onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
   onAnalysisStatusChange: () => void;
   onDateChange: (date: string) => void;
+  onViewChange: (view: AnalysisView) => void;
+  playerLevel: PlayerLevel;
+  showEngineDetails: boolean;
   username: string;
 }) {
   const engineRef = useRef<ChessStockfishEngine | null>(null);
@@ -1034,6 +1760,7 @@ function SelectedDayReview({
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [progress, setProgress] = useState<SelectedDayAnalysisProgress | null>(null);
   const selectedGames = selectedGameUrl === "all" ? day.games : day.games.filter((game) => game.gameUrl === selectedGameUrl);
+  const selectedSingleGame = selectedGameUrl === "all" ? null : day.games.find((game) => game.gameUrl === selectedGameUrl) ?? null;
 
   useEffect(() => {
     setSelectedGameUrl("all");
@@ -1134,14 +1861,32 @@ function SelectedDayReview({
   return (
     <section className="chess-daily-review" aria-label="Analysis">
       <div>
-        <p className="eyebrow">Analysis</p>
+        <p className="eyebrow">{playerLevel === "beginner" ? "Coach Review" : "Analysis"}</p>
         <h2>{formatDateLabel(day.date)}</h2>
         <p className="helper-text">
-          Browser Stockfish is coaching-grade, not master-level truth. This analyzes up to{" "}
-          {analysisSettings.maxGames} recent game(s) and{" "}
-          {analysisSettings.maxMoves} of your moves for the selected day. Stockfish is provided under
-          GPLv3; license text is included at public/vendor/stockfish/Copying.txt.
+          {playerLevel === "beginner"
+            ? "Start with the rating move, review the biggest mistake, then solve one practice position."
+            : "Follow the review path from rating swing to mistakes to practice. Stockfish only runs when you ask for selected-day analysis."}
         </p>
+        <div className="coach-flow-grid" aria-label="Guided review flow">
+          <article>
+            <span>1</span>
+            <strong>Rating movement</strong>
+            <p className={`rating-delta ${ratingDeltaClass(dailyNetChange(day))}`}>
+              {formatNetChange(dailyNetChange(day))} on {formatDateLabel(day.date)}
+            </p>
+          </article>
+          <article>
+            <span>2</span>
+            <strong>{playerLevel === "beginner" ? "Mistakes" : "Critical moves"}</strong>
+            <p>{analysisReport ? `${analysisReport.criticalMoves.length} review card(s) found` : "Run review to find the biggest swings."}</p>
+          </article>
+          <article>
+            <span>3</span>
+            <strong>Practice</strong>
+            <p>{analysisReport ? `${analysisReport.homeworkPuzzles.length} puzzle(s) ready` : "Homework appears after review."}</p>
+          </article>
+        </div>
         <div className="analysis-context-grid">
           <label className="field">
             <span>Date</span>
@@ -1169,64 +1914,53 @@ function SelectedDayReview({
             <span>{day.games[0]?.timeClass ?? "selected time control"}</span>
           </div>
         </div>
-        <div className="analysis-settings-grid" aria-label="Stockfish analysis settings">
-          <label className="field">
-            <span>Depth</span>
-            <input
-              disabled={analysisRunning}
-              max={18}
-              min={1}
-              type="number"
-              value={analysisSettings.depth}
-              onChange={(event) => updateAnalysisSetting("depth", Number(event.target.value))}
+        {playerLevel === "beginner" && showEngineDetails ? (
+          <details className="analysis-settings-drawer">
+            <summary>Engine details</summary>
+            <EngineSettingsControls
+              analysisRunning={analysisRunning}
+              analysisSettings={analysisSettings}
+              onSettingChange={updateAnalysisSetting}
             />
-          </label>
-          <label className="field">
-            <span>Time / position (ms)</span>
-            <input
-              disabled={analysisRunning}
-              max={3000}
-              min={100}
-              step={100}
-              type="number"
-              value={analysisSettings.moveTimeMs}
-              onChange={(event) => updateAnalysisSetting("moveTimeMs", Number(event.target.value))}
+          </details>
+        ) : null}
+        {playerLevel === "intermediate" ? (
+          <details className="analysis-settings-drawer">
+            <summary>Analysis settings</summary>
+            <EngineSettingsControls
+              analysisRunning={analysisRunning}
+              analysisSettings={analysisSettings}
+              onSettingChange={updateAnalysisSetting}
             />
-          </label>
-          <label className="field">
-            <span>Max games</span>
-            <input
-              disabled={analysisRunning}
-              max={8}
-              min={1}
-              type="number"
-              value={analysisSettings.maxGames}
-              onChange={(event) => updateAnalysisSetting("maxGames", Number(event.target.value))}
+          </details>
+        ) : null}
+        {playerLevel === "advanced" ? (
+          <details className="analysis-settings-drawer expert" open>
+            <summary>Expert engine drawer</summary>
+            <p className="helper-text">
+              Browser Stockfish settings: depth {analysisSettings.depth}, {analysisSettings.moveTimeMs}ms per position, up to {analysisSettings.maxGames} game(s), {analysisSettings.maxMoves} player move(s).
+            </p>
+            <EngineSettingsControls
+              analysisRunning={analysisRunning}
+              analysisSettings={analysisSettings}
+              onSettingChange={updateAnalysisSetting}
             />
-          </label>
-          <label className="field">
-            <span>Max player moves</span>
-            <input
-              disabled={analysisRunning}
-              max={60}
-              min={1}
-              type="number"
-              value={analysisSettings.maxMoves}
-              onChange={(event) => updateAnalysisSetting("maxMoves", Number(event.target.value))}
-            />
-          </label>
-        </div>
+          </details>
+        ) : null}
         <div className="chess-analysis-actions">
           <button className="secondary-button primary-action" disabled={analysisRunning} onClick={analyzeDay} type="button">
-            Analyze selected day
+            {playerLevel === "beginner" ? "Review selected day" : "Analyze selected day"}
           </button>
           <button className="secondary-button" disabled={!analysisRunning} onClick={stopAnalysis} type="button">
             Stop
           </button>
-          {analysisReport ? (
+          {analysisReport && (showEngineDetails || playerLevel === "advanced") ? (
             <span className="status-tag">
               Cached d{analysisReport.settings.depth} / {analysisReport.settings.moveTimeMs}ms
             </span>
+          ) : null}
+          {playerLevel === "advanced" && selectedSingleGame ? (
+            <CopyTextButton label="Copy PGN" text={selectedSingleGame.pgn} />
           ) : null}
         </div>
         {progress ? (
@@ -1263,7 +1997,7 @@ function SelectedDayReview({
                 <span>
                   {formatRating(game.playerRatingAfterGame)}
                 </span>
-                {gameStatuses.has(game.gameUrl) ? (
+                {(showEngineDetails || playerLevel === "advanced") && gameStatuses.has(game.gameUrl) ? (
                   <span className={`game-analysis-status status-${gameStatuses.get(game.gameUrl)?.status}`}>
                     {gameStatuses.get(game.gameUrl)?.status}: {gameStatuses.get(game.gameUrl)?.analyzedMoveCount}/
                     {gameStatuses.get(game.gameUrl)?.candidateMoveCount} moves
@@ -1274,13 +2008,25 @@ function SelectedDayReview({
           </div>
         </section>
         <section className="analysis-placeholder-panel">
-          <h3>Run summary</h3>
+          <h3>{playerLevel === "beginner" ? "Coach summary" : "Run summary"}</h3>
           <p>
             {analysisReport
-              ? `Analyzed ${analysisReport.analyzedGameUrls.length} game(s) at depth ${analysisReport.settings.depth}, ${analysisReport.settings.moveTimeMs}ms per position. Use Critical Moves and Homework for the board review.`
-              : "No matching cached engine analysis yet for these settings."}
+              ? `Reviewed ${analysisReport.analyzedGameUrls.length} game(s). Start with ${analysisReport.criticalMoves.length} ${playerLevel === "beginner" ? "mistake" : "critical move"} card(s), then solve ${analysisReport.homeworkPuzzles.length} homework puzzle(s).`
+              : playerLevel === "beginner"
+                ? "Run review for this day to get mistake cards and practice positions."
+                : "No matching cached engine analysis yet for these settings."}
           </p>
-          {analysisReport?.gameStatuses?.length ? (
+          {analysisReport ? (
+            <div className="review-next-actions">
+              <button className="secondary-button" onClick={() => onViewChange("critical")} type="button">
+                Review {playerLevel === "beginner" ? "mistakes" : "critical moves"}
+              </button>
+              <button className="secondary-button" onClick={() => onViewChange("homework")} type="button">
+                Open homework
+              </button>
+            </div>
+          ) : null}
+          {(showEngineDetails || playerLevel === "advanced") && analysisReport?.gameStatuses?.length ? (
             <ul className="game-status-list">
               {analysisReport.gameStatuses.map((status) => (
                 <li key={status.gameUrl}>
@@ -1291,7 +2037,7 @@ function SelectedDayReview({
               ))}
             </ul>
           ) : null}
-          {analysisReport?.skippedGames.length ? (
+          {(showEngineDetails || playerLevel === "advanced") && analysisReport?.skippedGames.length ? (
             <ul className="skipped-game-list">
               {analysisReport.skippedGames.slice(0, 4).map((game, index) => (
                 <li key={`${game.gameUrl}-${index}`}>{game.reason}</li>
@@ -1310,6 +2056,8 @@ export function ChessComAnalysisPanel() {
   const [ratedOnly, setRatedOnly] = useState(true);
   const [games, setGames] = useState<NormalizedChessGame[]>([]);
   const [selectedTimeClass, setSelectedTimeClass] = useState<ChessComTrackedTimeClass>("blitz");
+  const [playerLevel, setPlayerLevel] = useState<PlayerLevel>("intermediate");
+  const [showEngineDetails, setShowEngineDetails] = useState(false);
   const [archiveCount, setArchiveCount] = useState(0);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1429,9 +2177,9 @@ export function ChessComAnalysisPanel() {
       <div className="chess-analysis-header">
         <div>
           <p className="eyebrow">Chess.com Analysis</p>
-          <h2>Recent rating movement</h2>
+          <h2>Coach review surface</h2>
           <p className="helper-text">
-            Loads public Chess.com archives in the browser, filters rated blitz and rapid games, and groups rating movement by local day.
+            Loads public Chess.com games in the browser, then guides review by player level.
           </p>
         </div>
         {loadedUsername ? <span className="status-tag">Loaded {loadedUsername}</span> : null}
@@ -1474,6 +2222,30 @@ export function ChessComAnalysisPanel() {
             <span>{filteredGames.length} rated {selectedTimeClass} games</span>
             <span>{archiveCount} monthly archives checked</span>
           </div>
+          <div className="coach-mode-panel" aria-label="Player review mode">
+            <div>
+              <p className="eyebrow">Review mode</p>
+              <h3>{playerLevel === "beginner" ? "Beginner coach" : playerLevel === "advanced" ? "Advanced analysis" : "Intermediate review"}</h3>
+            </div>
+            <div className="coach-mode-selector" role="group" aria-label="Player level">
+              {(["beginner", "intermediate", "advanced"] as PlayerLevel[]).map((level) => (
+                <button
+                  aria-pressed={playerLevel === level}
+                  className={playerLevel === level ? "selected" : ""}
+                  key={level}
+                  onClick={() => setPlayerLevel(level)}
+                  type="button"
+                >
+                  {level[0].toUpperCase() + level.slice(1)}
+                </button>
+              ))}
+            </div>
+            {playerLevel === "beginner" ? (
+              <button className="secondary-button" onClick={() => setShowEngineDetails((current) => !current)} type="button">
+                {showEngineDetails ? "Hide engine details" : "Show engine details"}
+              </button>
+            ) : null}
+          </div>
           <label className="field time-control-selector">
             <span>Time control</span>
             <select
@@ -1490,7 +2262,7 @@ export function ChessComAnalysisPanel() {
               ))}
             </select>
           </label>
-          <AnalysisViewNav activeView={activeView} onChange={setActiveView} />
+          <AnalysisViewNav activeView={activeView} onChange={setActiveView} playerLevel={playerLevel} />
           <div className="analysis-view-panel">
             {filteredGames.length === 0 ? (
               <section className="analysis-placeholder-panel">
@@ -1502,8 +2274,9 @@ export function ChessComAnalysisPanel() {
               <section aria-label="Rating summaries">
                 <div className="analysis-section-heading">
                   <p className="eyebrow">Rating</p>
-                  <h3>{timeControlLabel(selectedTimeClass)} daily rating cards</h3>
+                  <h3>{timeControlLabel(selectedTimeClass)} trend and daily cards</h3>
                 </div>
+                <RatingChangeGraph days={summaries} />
                 <div className="chess-analysis-days">
                   {summaries.map((summary) => (
                     <DaySummaryButton
@@ -1526,15 +2299,27 @@ export function ChessComAnalysisPanel() {
                 onAnalysisReport={handleAnalysisReport}
                 onAnalysisStatusChange={bumpAnalysisRevision}
                 onDateChange={setSelectedDate}
+                onViewChange={setActiveView}
+                playerLevel={playerLevel}
+                showEngineDetails={showEngineDetails}
                 username={loadedUsername}
               />
             ) : null}
-            {activeView === "change" && filteredGames.length > 0 ? <RatingChangeGraph days={summaries} /> : null}
             {activeView === "critical" ? (
-              <CriticalMovesSection moves={selectedAnalysisReport?.criticalMoves ?? []} />
+              <CriticalMovesSection
+                analysisSettings={analysisSettings}
+                moves={selectedAnalysisReport?.criticalMoves ?? []}
+                playerLevel={playerLevel}
+                showEngineDetails={showEngineDetails}
+              />
             ) : null}
             {activeView === "homework" ? (
-              <HomeworkSection puzzles={selectedAnalysisReport?.homeworkPuzzles ?? []} />
+              <HomeworkSection
+                analysisSettings={analysisSettings}
+                playerLevel={playerLevel}
+                puzzles={selectedAnalysisReport?.homeworkPuzzles ?? []}
+                showEngineDetails={showEngineDetails}
+              />
             ) : null}
             {activeView === "weekly" && weeklyReport ? (
               <WeeklyReportPanel
@@ -1546,9 +2331,11 @@ export function ChessComAnalysisPanel() {
                   setSelectedDate(date);
                   setActiveView("analysis");
                 }}
+                playerLevel={playerLevel}
                 report={weeklyReport}
                 selectedWeek={selectedWeek ?? weeklyReport.weekKey}
                 setSelectedWeek={setSelectedWeek}
+                showEngineDetails={showEngineDetails}
                 username={loadedUsername}
                 weeks={availableWeeks}
               />

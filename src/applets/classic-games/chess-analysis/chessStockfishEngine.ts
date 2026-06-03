@@ -12,8 +12,16 @@ export type StockfishAnalysisResult = {
   rawInfo: string[];
 };
 
+export type StockfishTopMove = {
+  evaluation: EngineEvaluation;
+  line: string[];
+  move: string;
+  rank: number;
+};
+
 export type ChessStockfishEngine = {
   analyzeFen: (fen: string, options?: StockfishAnalyzeOptions) => Promise<StockfishAnalysisResult>;
+  analyzeTopMoves: (fen: string, options?: StockfishAnalyzeOptions & { lineCount?: number }) => Promise<StockfishTopMove[]>;
   dispose: () => void;
   initialize: () => Promise<void>;
   stop: () => void;
@@ -40,6 +48,16 @@ function parseEvaluation(line: string): EngineEvaluation | null {
     type: scoreMatch[1] as "cp" | "mate",
     value: Number(scoreMatch[2]),
   };
+}
+
+function parseMultiPvRank(line: string): number {
+  const match = line.match(/\bmultipv\s+(\d+)/);
+  return match ? Number(match[1]) : 1;
+}
+
+function parsePrincipalVariation(line: string): string[] {
+  const match = line.match(/\bpv\s+(.+)$/);
+  return match ? match[1].trim().split(/\s+/).filter(Boolean) : [];
 }
 
 function timeoutSignal(signal: AbortSignal | undefined, timeoutMs: number, onTimeout: () => void): () => void {
@@ -181,6 +199,81 @@ export function createStockfishEngine(enginePath = defaultEnginePath()): ChessSt
     return resultPromise;
   }
 
+  async function analyzeTopMoves(
+    fen: string,
+    options: StockfishAnalyzeOptions & { lineCount?: number } = {},
+  ): Promise<StockfishTopMove[]> {
+    await initialize();
+    const depth = options.depth ?? defaultDepth;
+    const moveTimeMs = options.moveTimeMs ?? defaultMoveTimeMs;
+    const lineCount = Math.min(5, Math.max(1, Math.round(options.lineCount ?? 3)));
+    const latestByRank = new Map<number, StockfishTopMove>();
+
+    const resultPromise = new Promise<StockfishTopMove[]>((resolve, reject) => {
+      const cleanup = timeoutSignal(options.signal, Math.max(7000, moveTimeMs + depth * 1200 + 5000), () => {
+        listeners.delete(listener);
+        stop();
+        reject(options.signal?.aborted ? new Error("Analysis cancelled.") : new Error("Timed out waiting for top moves."));
+      });
+      const listener = (message: string) => {
+        if (message.startsWith("error ")) {
+          cleanup();
+          listeners.delete(listener);
+          reject(new Error(message.replace(/^error\s+/, "")));
+          return;
+        }
+
+        if (message.startsWith("info ")) {
+          const evaluation = parseEvaluation(message);
+          const line = parsePrincipalVariation(message);
+          if (!evaluation || line.length === 0) {
+            return;
+          }
+
+          const rank = parseMultiPvRank(message);
+          if (rank <= lineCount) {
+            latestByRank.set(rank, {
+              evaluation,
+              line,
+              move: line[0],
+              rank,
+            });
+          }
+          return;
+        }
+
+        if (message.startsWith("bestmove ")) {
+          cleanup();
+          listeners.delete(listener);
+          const topMoves = [...latestByRank.values()].sort((left, right) => left.rank - right.rank);
+          if (topMoves.length === 0) {
+            reject(new Error("Stockfish did not return top-move analysis."));
+            return;
+          }
+
+          resolve(topMoves.slice(0, lineCount));
+        }
+      };
+
+      listeners.add(listener);
+    });
+
+    post("ucinewgame");
+    post(`setoption name MultiPV value ${lineCount}`);
+    post("isready");
+    await waitFor((message) => message === "readyok", 12000, options.signal);
+    post(`position fen ${fen}`);
+    post(depth > 0 ? `go depth ${depth} movetime ${moveTimeMs}` : `go movetime ${moveTimeMs}`);
+
+    try {
+      return await resultPromise;
+    } finally {
+      if (worker) {
+        post("setoption name MultiPV value 1");
+      }
+    }
+  }
+
   function stop(): void {
     if (worker) {
       worker.postMessage("stop");
@@ -199,6 +292,7 @@ export function createStockfishEngine(enginePath = defaultEnginePath()): ChessSt
 
   return {
     analyzeFen,
+    analyzeTopMoves,
     dispose,
     initialize,
     stop,
