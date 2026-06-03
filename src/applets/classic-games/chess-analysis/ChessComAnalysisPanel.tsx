@@ -35,6 +35,15 @@ import type {
 } from "./chessReportTypes";
 
 const timeClasses: ChessComTrackedTimeClass[] = ["blitz", "rapid"];
+type AnalysisView = "rating" | "weekly" | "change" | "daily" | "engine";
+
+const analysisViews: { id: AnalysisView; label: string }[] = [
+  { id: "rating", label: "Rating" },
+  { id: "weekly", label: "Weekly Report" },
+  { id: "change", label: "Rating Change" },
+  { id: "daily", label: "Daily Review" },
+  { id: "engine", label: "Engine Analysis" },
+];
 const boardFiles = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const fenPieceGlyphs: Record<string, string> = {
   B: "♗",
@@ -325,6 +334,30 @@ function DaySummaryButton({
   );
 }
 
+function AnalysisViewNav({
+  activeView,
+  onChange,
+}: {
+  activeView: AnalysisView;
+  onChange: (view: AnalysisView) => void;
+}) {
+  return (
+    <nav className="analysis-view-nav" aria-label="Chess.com analysis sections">
+      {analysisViews.map((view) => (
+        <button
+          aria-pressed={activeView === view.id}
+          className={activeView === view.id ? "selected" : ""}
+          key={view.id}
+          onClick={() => onChange(view.id)}
+          type="button"
+        >
+          {view.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function CriticalMoveList({ moves }: { moves: CriticalMoveAnalysis[] }) {
   if (moves.length === 0) {
     return <p className="helper-text">No critical moments found yet.</p>;
@@ -360,6 +393,40 @@ function CriticalMoveList({ moves }: { moves: CriticalMoveAnalysis[] }) {
   );
 }
 
+function CriticalMovePager({ moves }: { moves: CriticalMoveAnalysis[] }) {
+  const [index, setIndex] = useState(0);
+  const boundedIndex = Math.min(index, Math.max(0, moves.length - 1));
+  const selectedMove = moves[boundedIndex] ?? null;
+
+  useEffect(() => {
+    setIndex(0);
+  }, [moves]);
+
+  if (!selectedMove) {
+    return <p className="helper-text">No cached critical moments yet.</p>;
+  }
+
+  return (
+    <div className="analysis-carousel">
+      <div className="analysis-carousel-controls">
+        <button className="secondary-button" disabled={boundedIndex === 0} onClick={() => setIndex((current) => Math.max(0, current - 1))} type="button">
+          Previous
+        </button>
+        <span>{boundedIndex + 1} of {moves.length}</span>
+        <button
+          className="secondary-button"
+          disabled={boundedIndex >= moves.length - 1}
+          onClick={() => setIndex((current) => Math.min(moves.length - 1, current + 1))}
+          type="button"
+        >
+          Next
+        </button>
+      </div>
+      <CriticalMoveList moves={[selectedMove]} />
+    </div>
+  );
+}
+
 function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
   if (puzzles.length === 0) {
     return <p className="helper-text">No homework puzzles generated yet.</p>;
@@ -384,6 +451,40 @@ function HomeworkPuzzleList({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] })
         </li>
       ))}
     </ol>
+  );
+}
+
+function HomeworkPuzzlePager({ puzzles }: { puzzles: HomeworkPuzzleCandidate[] }) {
+  const [index, setIndex] = useState(0);
+  const boundedIndex = Math.min(index, Math.max(0, puzzles.length - 1));
+  const selectedPuzzle = puzzles[boundedIndex] ?? null;
+
+  useEffect(() => {
+    setIndex(0);
+  }, [puzzles]);
+
+  if (!selectedPuzzle) {
+    return <p className="helper-text">No cached homework puzzles yet.</p>;
+  }
+
+  return (
+    <div className="analysis-carousel">
+      <div className="analysis-carousel-controls">
+        <button className="secondary-button" disabled={boundedIndex === 0} onClick={() => setIndex((current) => Math.max(0, current - 1))} type="button">
+          Previous
+        </button>
+        <span>{boundedIndex + 1} of {puzzles.length}</span>
+        <button
+          className="secondary-button"
+          disabled={boundedIndex >= puzzles.length - 1}
+          onClick={() => setIndex((current) => Math.min(puzzles.length - 1, current + 1))}
+          type="button"
+        >
+          Next
+        </button>
+      </div>
+      <HomeworkPuzzleList puzzles={[selectedPuzzle]} />
+    </div>
   );
 }
 
@@ -470,8 +571,6 @@ function WeeklyReportPanel({
           <p>{report.worstDay ? formatNetChange(report.worstDay.netChange) : "No rating movement found."}</p>
         </article>
       </div>
-      <RatingChangeGraph days={report.days} />
-      <DailySummaryReport days={report.days} onSelectDay={onSelectDay} />
       <div className="weekly-coverage-row">
         <span>Fetched game/rating data: {report.days.length} active day(s)</span>
         <span>Engine-analyzed data: {report.engineAnalyzedDayCount}/{report.days.length} day(s)</span>
@@ -505,11 +604,11 @@ function WeeklyReportPanel({
         </section>
         <section className="analysis-placeholder-panel">
           <h3>Top weekly critical moments</h3>
-          <CriticalMoveList moves={report.topCriticalMoves} />
+          <CriticalMovePager moves={report.topCriticalMoves} />
         </section>
         <section className="analysis-placeholder-panel">
           <h3>Weekly homework</h3>
-          <HomeworkPuzzleList puzzles={report.homeworkPuzzles} />
+          <HomeworkPuzzlePager puzzles={report.homeworkPuzzles} />
         </section>
       </div>
       <div className="chess-analysis-actions">
@@ -786,6 +885,7 @@ export function ChessComAnalysisPanel() {
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
   const [analysisRevision, setAnalysisRevision] = useState(0);
   const [analysisSettings, setAnalysisSettings] = useState<SelectedDayAnalysisSettings>(defaultSelectedDayAnalysisSettings);
+  const [activeView, setActiveView] = useState<AnalysisView>("rating");
 
   const summaries = useMemo(() => summarizeDailyChessGames(games), [games]);
   const selectedDay = summaries.find((summary) => summary.date === selectedDate) ?? summaries[0] ?? null;
@@ -842,6 +942,7 @@ export function ChessComAnalysisPanel() {
       setLoadedUsername(trimmedUsername);
       setSelectedDate(normalizedGames.at(-1)?.endDate ?? null);
       setAnalysisRevision((revision) => revision + 1);
+      setActiveView("rating");
       saveLastChessComUsername(trimmedUsername);
     } catch (fetchError) {
       setGames([]);
@@ -908,35 +1009,59 @@ export function ChessComAnalysisPanel() {
             <span>{games.length} rated blitz/rapid games</span>
             <span>{archiveCount} monthly archives checked</span>
           </div>
-          <div className="chess-analysis-days">
-            {summaries.map((summary) => (
-              <DaySummaryButton
-                day={summary}
-                isSelected={selectedDay?.date === summary.date}
-                key={summary.date}
-                onSelect={() => setSelectedDate(summary.date)}
+          <AnalysisViewNav activeView={activeView} onChange={setActiveView} />
+          <div className="analysis-view-panel">
+            {activeView === "rating" ? (
+              <section aria-label="Rating summaries">
+                <div className="analysis-section-heading">
+                  <p className="eyebrow">Rating</p>
+                  <h3>Daily rating cards</h3>
+                </div>
+                <div className="chess-analysis-days">
+                  {summaries.map((summary) => (
+                    <DaySummaryButton
+                      day={summary}
+                      isSelected={selectedDay?.date === summary.date}
+                      key={summary.date}
+                      onSelect={() => setSelectedDate(summary.date)}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {activeView === "weekly" && weeklyReport ? (
+              <WeeklyReportPanel
+                analysisSettings={analysisSettings}
+                onSelectDay={(date) => {
+                  setSelectedDate(date);
+                  setActiveView("engine");
+                }}
+                report={weeklyReport}
+                selectedWeek={selectedWeek ?? weeklyReport.weekKey}
+                setSelectedWeek={setSelectedWeek}
+                weeks={availableWeeks}
               />
-            ))}
+            ) : null}
+            {activeView === "change" ? <RatingChangeGraph days={summaries} /> : null}
+            {activeView === "daily" ? (
+              <DailySummaryReport
+                days={summaries}
+                onSelectDay={(date) => {
+                  setSelectedDate(date);
+                  setActiveView("engine");
+                }}
+              />
+            ) : null}
+            {activeView === "engine" && selectedDay ? (
+              <SelectedDayReview
+                analysisSettings={analysisSettings}
+                day={selectedDay}
+                onAnalysisSettingsChange={setAnalysisSettings}
+                onAnalysisReport={() => setAnalysisRevision((revision) => revision + 1)}
+                username={loadedUsername}
+              />
+            ) : null}
           </div>
-          {weeklyReport ? (
-            <WeeklyReportPanel
-              analysisSettings={analysisSettings}
-              onSelectDay={(date) => setSelectedDate(date)}
-              report={weeklyReport}
-              selectedWeek={selectedWeek ?? weeklyReport.weekKey}
-              setSelectedWeek={setSelectedWeek}
-              weeks={availableWeeks}
-            />
-          ) : null}
-          {selectedDay ? (
-            <SelectedDayReview
-              analysisSettings={analysisSettings}
-              day={selectedDay}
-              onAnalysisSettingsChange={setAnalysisSettings}
-              onAnalysisReport={() => setAnalysisRevision((revision) => revision + 1)}
-              username={loadedUsername}
-            />
-          ) : null}
         </>
       ) : null}
     </section>

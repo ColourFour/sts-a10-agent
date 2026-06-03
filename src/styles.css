@@ -2075,6 +2075,7 @@ h3 {
 .chess-analysis-panel {
   display: grid;
   gap: 16px;
+  min-width: 0;
   padding: 18px;
   border: 1px solid color-mix(in srgb, var(--theme-accent), transparent 72%);
   border-radius: 8px;
@@ -2082,6 +2083,16 @@ h3 {
     linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
     rgba(16, 21, 31, 0.92);
   box-shadow: var(--shadow);
+}
+
+.chess-analysis-panel h2,
+.chess-analysis-panel h3,
+.chess-analysis-panel p,
+.chess-analysis-panel span,
+.chess-analysis-panel strong,
+.chess-analysis-panel li {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .chess-analysis-header,
@@ -2135,9 +2146,61 @@ h3 {
   font-weight: 850;
 }
 
+.analysis-view-nav {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 8px;
+  background: rgba(10, 13, 17, 0.42);
+  overflow-x: auto;
+}
+
+.analysis-view-nav button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.analysis-view-nav button.selected,
+.analysis-view-nav button:hover {
+  border-color: rgba(240, 198, 111, 0.35);
+  color: var(--text);
+  background: rgba(240, 198, 111, 0.13);
+}
+
+.analysis-view-panel {
+  display: grid;
+  min-width: 0;
+}
+
+.analysis-view-panel > section,
+.analysis-view-panel > .weekly-report-panel,
+.analysis-view-panel > .rating-graph-panel,
+.analysis-view-panel > .daily-report-panel,
+.analysis-view-panel > .chess-daily-review {
+  min-width: 0;
+}
+
+.analysis-section-heading {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
 .chess-analysis-days {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 12px;
 }
 
@@ -2221,8 +2284,9 @@ h3 {
 
 .chess-analysis-metrics strong {
   color: var(--text);
-  font-size: 0.9rem;
-  white-space: nowrap;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .chess-daily-review {
@@ -2272,6 +2336,7 @@ h3 {
 }
 
 .weekly-report-header {
+  align-items: start;
   justify-content: space-between;
   gap: 14px;
 }
@@ -2343,7 +2408,7 @@ h3 {
 
 .weekly-report-columns {
   display: grid;
-  grid-template-columns: minmax(190px, 0.7fr) repeat(2, minmax(240px, 1fr));
+  grid-template-columns: minmax(190px, 0.55fr) repeat(2, minmax(280px, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -2358,7 +2423,7 @@ h3 {
 
 .chess-review-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(190px, 1fr));
+  grid-template-columns: minmax(280px, 1.2fr) repeat(3, minmax(220px, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -2399,7 +2464,8 @@ h3 {
 }
 
 .chess-game-row span:nth-child(2) {
-  flex: 1;
+  flex: 1 1 180px;
+  overflow-wrap: anywhere;
 }
 
 .chess-game-row strong {
@@ -2490,6 +2556,26 @@ h3 {
 .analysis-placeholder-panel p {
   color: var(--muted);
   line-height: 1.42;
+}
+
+.analysis-carousel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.analysis-carousel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.analysis-carousel-controls span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 900;
 }
 
 .rating-graph-panel,
@@ -2600,9 +2686,7 @@ h3 {
 
 .daily-report-row span:nth-child(2) {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .fen-board-wrap {
@@ -2666,7 +2750,7 @@ h3 {
 .critical-move-list li,
 .homework-puzzle-list li {
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr);
+  grid-template-columns: minmax(132px, 176px) minmax(0, 1fr);
   gap: 12px;
   padding: 10px;
   border: 1px solid rgba(232, 220, 200, 0.13);
@@ -2679,6 +2763,11 @@ h3 {
   align-content: start;
   gap: 7px;
   min-width: 0;
+}
+
+.analysis-card-copy p {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .critical-move-list strong,
@@ -2704,6 +2793,27 @@ h3 {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 0.76rem;
   line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1180px) {
+  .weekly-report-columns,
+  .chess-review-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .weekly-report-header,
+  .chess-analysis-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .critical-move-list li,
+  .homework-puzzle-list li {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
