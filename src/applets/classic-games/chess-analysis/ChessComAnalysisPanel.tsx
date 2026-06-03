@@ -548,7 +548,7 @@ function PlayableAnalysisBoard({
               {topMoves.map((move) => (
                 <li key={`${move.rank}-${move.move}`}>
                   <strong>#{move.rank} {formatMoveLabel(currentFen, move.move)}</strong>
-                  <span>{topMoveEvaluationLabel(move)}</span>
+                  <span> · {topMoveEvaluationLabel(move)}</span>
                   <small>{formatPvLine(currentFen, move.line)}</small>
                 </li>
               ))}
@@ -864,7 +864,7 @@ function FocusedCriticalMove({
         bestMove={positionView === "before" ? move.bestMove : undefined}
         fen={boardFen}
         orientation={move.sideToMove}
-        playedMove={positionView === "before" ? move.playedMoveUci : undefined}
+        playedMove={move.playedMoveUci}
       />
       <div className="focused-review-copy">
         <div className="card-topline">
@@ -1019,7 +1019,7 @@ function CriticalMovePager({
   }, [moves]);
 
   if (!selectedMove) {
-    return <p className="helper-text">No cached critical moments yet.</p>;
+    return <p className="helper-text">No saved critical moments match the current week and settings yet.</p>;
   }
 
   return (
@@ -1260,7 +1260,7 @@ function HomeworkPuzzlePager({
   }, [puzzles]);
 
   if (!selectedPuzzle) {
-    return <p className="helper-text">No cached homework puzzles yet.</p>;
+    return <p className="helper-text">No saved homework puzzles match the current week and settings yet.</p>;
   }
 
   return (
@@ -1368,6 +1368,38 @@ function EngineSettingsControls({
   );
 }
 
+function formatAnalysisSettingsSummary(settings: SelectedDayAnalysisSettings): string {
+  return `depth ${settings.depth}, ${settings.moveTimeMs}ms per position, up to ${settings.maxGames} game(s), ${settings.maxMoves} player move(s)`;
+}
+
+function selectedDaySavedAnalysisNote(settings: SelectedDayAnalysisSettings): string {
+  return `Saved analysis is matched by username, date, game scope, and settings (${formatAnalysisSettingsSummary(settings)}). If you change any setting, the app looks for a different saved run.`;
+}
+
+function weeklySavedAnalysisNote(settings: SelectedDayAnalysisSettings): string {
+  return `Weekly coverage counts saved selected-day reviews that match the current time control and settings (${formatAnalysisSettingsSummary(settings)}). A day can look missing if it was reviewed with a different game limit, move limit, depth, or time setting.`;
+}
+
+function analysisSettingsEqual(left: SelectedDayAnalysisSettings, right: SelectedDayAnalysisSettings): boolean {
+  return (
+    left.depth === right.depth &&
+    left.maxGames === right.maxGames &&
+    left.maxMoves === right.maxMoves &&
+    left.moveTimeMs === right.moveTimeMs
+  );
+}
+
+function weekKeyForDate(date: string): string {
+  const parsedDate = new Date(`${date}T12:00:00`);
+  const day = parsedDate.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  parsedDate.setDate(parsedDate.getDate() + mondayOffset);
+  const year = parsedDate.getFullYear();
+  const month = `${parsedDate.getMonth() + 1}`.padStart(2, "0");
+  const dayOfMonth = `${parsedDate.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${dayOfMonth}`;
+}
+
 function weeklyMainTakeaway(report: WeeklyReport, selectedTimeClass: ChessComTrackedTimeClass): string {
   const summary = report.timeClassSummaries[selectedTimeClass];
   if (summary.gamesPlayed === 0) {
@@ -1393,14 +1425,14 @@ function weeklyMainTakeaway(report: WeeklyReport, selectedTimeClass: ChessComTra
 function weeklyHomeworkPlan(report: WeeklyReport): string {
   if (report.homeworkPuzzles.length > 0) {
     const firstPuzzle = report.homeworkPuzzles[0];
-    return `Solve ${report.homeworkPuzzles.length} cached puzzle(s), starting with ${sideLabel(firstPuzzle.sideToMove)} to move from the biggest reviewed mistake.`;
+    return `Solve ${report.homeworkPuzzles.length} saved puzzle(s), starting with ${sideLabel(firstPuzzle.sideToMove)} to move from the biggest reviewed mistake.`;
   }
 
   if (report.analysisCoverage.analyzedDayCount === 0) {
     return "Analyze one selected day, then solve the first generated homework puzzle.";
   }
 
-  return "Review the cached critical move cards and re-run a missing day if you want more puzzle candidates.";
+  return "Review the saved critical move cards and re-run a missing day if you want more puzzle candidates.";
 }
 
 function WeeklyReportPanel({
@@ -1608,7 +1640,7 @@ function WeeklyReportPanel({
         </span>
         <span>Stockfish-analyzed games: {report.engineAnalyzedGameCount}</span>
         {(showEngineDetails || playerLevel === "advanced") ? (
-          <span>Cache lookup d{analysisSettings.depth} / {analysisSettings.moveTimeMs}ms / {analysisSettings.maxGames} game(s) / {analysisSettings.maxMoves} move(s)</span>
+          <span>Saved-run lookup: {formatAnalysisSettingsSummary(analysisSettings)}</span>
         ) : null}
       </div>
       <section className="weekly-analysis-queue" aria-label="Weekly analysis coverage">
@@ -1616,7 +1648,7 @@ function WeeklyReportPanel({
           <div>
             <h3>Analysis coverage</h3>
             <p className="helper-text">
-              Analyze one missing day at a time. Cached days are reused unless you explicitly reanalyze them.
+              {weeklySavedAnalysisNote(analysisSettings)} Analyze one missing day at a time; matching saved days are reused unless you reanalyze them.
             </p>
           </div>
           <div className="weekly-queue-actions">
@@ -1686,7 +1718,7 @@ function WeeklyReportPanel({
       </section>
       <div className="weekly-report-columns">
         <section className="analysis-placeholder-panel">
-          <h3>Engine issue labels</h3>
+          <h3>Coaching motifs from saved analysis</h3>
           {report.themeCounts.length > 0 ? (
             <ul className="skipped-game-list">
               {report.themeCounts.map((theme) => (
@@ -1735,6 +1767,7 @@ function SelectedDayReview({
   onAnalysisReport,
   onAnalysisStatusChange,
   onDateChange,
+  onUseAnalysisInWeeklyReport,
   onViewChange,
   playerLevel,
   showEngineDetails,
@@ -1748,6 +1781,7 @@ function SelectedDayReview({
   onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
   onAnalysisStatusChange: () => void;
   onDateChange: (date: string) => void;
+  onUseAnalysisInWeeklyReport: (report: DailyEngineAnalysisReport, date: string) => void;
   onViewChange: (view: AnalysisView) => void;
   playerLevel: PlayerLevel;
   showEngineDetails: boolean;
@@ -1850,6 +1884,7 @@ function SelectedDayReview({
   const progressValue =
     progress && progress.total > 0 ? `${Math.min(progress.current + 1, progress.total)} / ${progress.total}` : null;
   const gameStatuses = new Map((analysisReport?.gameStatuses ?? []).map((status) => [status.gameUrl, status]));
+  const canUseInWeeklyReport = Boolean(analysisReport) && selectedGameUrl === "all";
 
   function updateAnalysisSetting(key: keyof SelectedDayAnalysisSettings, value: number) {
     onAnalysisSettingsChange({
@@ -1917,6 +1952,7 @@ function SelectedDayReview({
         {playerLevel === "beginner" && showEngineDetails ? (
           <details className="analysis-settings-drawer">
             <summary>Engine details</summary>
+            <p className="helper-text">{selectedDaySavedAnalysisNote(analysisSettings)}</p>
             <EngineSettingsControls
               analysisRunning={analysisRunning}
               analysisSettings={analysisSettings}
@@ -1927,6 +1963,7 @@ function SelectedDayReview({
         {playerLevel === "intermediate" ? (
           <details className="analysis-settings-drawer">
             <summary>Analysis settings</summary>
+            <p className="helper-text">{selectedDaySavedAnalysisNote(analysisSettings)}</p>
             <EngineSettingsControls
               analysisRunning={analysisRunning}
               analysisSettings={analysisSettings}
@@ -1938,7 +1975,7 @@ function SelectedDayReview({
           <details className="analysis-settings-drawer expert" open>
             <summary>Expert engine drawer</summary>
             <p className="helper-text">
-              Browser Stockfish settings: depth {analysisSettings.depth}, {analysisSettings.moveTimeMs}ms per position, up to {analysisSettings.maxGames} game(s), {analysisSettings.maxMoves} player move(s).
+              Browser Stockfish settings: {formatAnalysisSettingsSummary(analysisSettings)}. {selectedDaySavedAnalysisNote(analysisSettings)}
             </p>
             <EngineSettingsControls
               analysisRunning={analysisRunning}
@@ -1956,7 +1993,7 @@ function SelectedDayReview({
           </button>
           {analysisReport && (showEngineDetails || playerLevel === "advanced") ? (
             <span className="status-tag">
-              Cached d{analysisReport.settings.depth} / {analysisReport.settings.moveTimeMs}ms
+              Saved run: d{analysisReport.settings.depth} / {analysisReport.settings.moveTimeMs}ms
             </span>
           ) : null}
           {playerLevel === "advanced" && selectedSingleGame ? (
@@ -2014,17 +2051,32 @@ function SelectedDayReview({
               ? `Reviewed ${analysisReport.analyzedGameUrls.length} game(s). Start with ${analysisReport.criticalMoves.length} ${playerLevel === "beginner" ? "mistake" : "critical move"} card(s), then solve ${analysisReport.homeworkPuzzles.length} homework puzzle(s).`
               : playerLevel === "beginner"
                 ? "Run review for this day to get mistake cards and practice positions."
-                : "No matching cached engine analysis yet for these settings."}
+                : "No saved analysis matches this date, game scope, and settings yet. Run analysis now, or restore the settings used for a previous run."}
           </p>
           {analysisReport ? (
-            <div className="review-next-actions">
-              <button className="secondary-button" onClick={() => onViewChange("critical")} type="button">
-                Review {playerLevel === "beginner" ? "mistakes" : "critical moves"}
-              </button>
-              <button className="secondary-button" onClick={() => onViewChange("homework")} type="button">
-                Open homework
-              </button>
-            </div>
+            <>
+              <div className="review-next-actions">
+                <button className="secondary-button" onClick={() => onViewChange("critical")} type="button">
+                  Review {playerLevel === "beginner" ? "mistakes" : "critical moves"}
+                </button>
+                <button className="secondary-button" onClick={() => onViewChange("homework")} type="button">
+                  Open homework
+                </button>
+                <button
+                  className="secondary-button primary-action"
+                  disabled={!canUseInWeeklyReport}
+                  onClick={() => analysisReport && onUseAnalysisInWeeklyReport(analysisReport, day.date)}
+                  type="button"
+                >
+                  Use this analyzed day in Weekly Report
+                </button>
+              </div>
+              <p className="helper-text">
+                {canUseInWeeklyReport
+                  ? "This opens Weekly Report with this saved run's settings so the weekly motifs, biggest mistake, and homework plan can include this day."
+                  : "Weekly Report uses selected-date reviews. Single-game reviews stay available here, but they do not stand in for the full day."}
+              </p>
+            </>
           ) : null}
           {(showEngineDetails || playerLevel === "advanced") && analysisReport?.gameStatuses?.length ? (
             <ul className="game-status-list">
@@ -2110,6 +2162,18 @@ export function ChessComAnalysisPanel() {
       setAnalysisRevision((revision) => revision + 1);
     }
   }, []);
+
+  const handleUseAnalysisInWeeklyReport = useCallback(
+    (report: DailyEngineAnalysisReport, date: string) => {
+      setAnalysisSettings((currentSettings) =>
+        analysisSettingsEqual(currentSettings, report.settings) ? currentSettings : report.settings,
+      );
+      setSelectedWeek(weekKeyForDate(date));
+      setAnalysisRevision((revision) => revision + 1);
+      setActiveView("weekly");
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!selectedDate && summaries.length > 0) {
@@ -2299,6 +2363,7 @@ export function ChessComAnalysisPanel() {
                 onAnalysisReport={handleAnalysisReport}
                 onAnalysisStatusChange={bumpAnalysisRevision}
                 onDateChange={setSelectedDate}
+                onUseAnalysisInWeeklyReport={handleUseAnalysisInWeeklyReport}
                 onViewChange={setActiveView}
                 playerLevel={playerLevel}
                 showEngineDetails={showEngineDetails}
