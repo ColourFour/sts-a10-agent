@@ -2010,6 +2010,18 @@ function SelectedDayReview({
   const [progress, setProgress] = useState<SelectedDayAnalysisProgress | null>(null);
   const selectedGames = selectedGameUrl === "all" ? day.games : day.games.filter((game) => game.gameUrl === selectedGameUrl);
   const selectedSingleGame = selectedGameUrl === "all" ? null : day.games.find((game) => game.gameUrl === selectedGameUrl) ?? null;
+  const selectedScopeCacheKey = useMemo(
+    () =>
+      username
+        ? buildDayAnalysisCacheKey({
+            date: day.date,
+            games: selectedGames,
+            settings: analysisSettings,
+            username,
+          })
+        : null,
+    [analysisSettings, day.date, selectedGames, username],
+  );
   const selectedScopeStatus = useMemo(
     () =>
       username
@@ -2022,6 +2034,8 @@ function SelectedDayReview({
         : null,
     [analysisReport, analysisSettings, day.date, selectedGames, username],
   );
+  const scopedAnalysisReport =
+    analysisReport && selectedScopeCacheKey && analysisReport.cacheKey === selectedScopeCacheKey ? analysisReport : null;
   const relatedScopeStatuses = useMemo(
     () =>
       username
@@ -2119,8 +2133,8 @@ function SelectedDayReview({
 
   const progressValue =
     progress && progress.total > 0 ? `${Math.min(progress.current + 1, progress.total)} / ${progress.total}` : null;
-  const gameStatuses = new Map((analysisReport?.gameStatuses ?? []).map((status) => [status.gameUrl, status]));
-  const canUseInWeeklyReport = Boolean(analysisReport) && selectedGameUrl === "all";
+  const gameStatuses = new Map((scopedAnalysisReport?.gameStatuses ?? []).map((status) => [status.gameUrl, status]));
+  const canUseInWeeklyReport = Boolean(scopedAnalysisReport) && selectedGameUrl === "all";
 
   function updateAnalysisSetting(key: keyof SelectedDayAnalysisSettings, value: number) {
     onAnalysisSettingsChange({
@@ -2158,12 +2172,12 @@ function SelectedDayReview({
           <article>
             <span>2</span>
             <strong>{playerLevel === "beginner" ? "Mistakes" : "Critical moves"}</strong>
-            <p>{analysisReport ? `${analysisReport.criticalMoves.length} review card(s) found` : "Run review to find the biggest swings."}</p>
+            <p>{scopedAnalysisReport ? `${scopedAnalysisReport.criticalMoves.length} review card(s) found` : "Run review to find the biggest swings."}</p>
           </article>
           <article>
             <span>3</span>
             <strong>Practice</strong>
-            <p>{analysisReport ? `${analysisReport.homeworkPuzzles.length} puzzle(s) ready` : "Homework appears after review."}</p>
+            <p>{scopedAnalysisReport ? `${scopedAnalysisReport.homeworkPuzzles.length} puzzle(s) ready` : "Homework appears after review."}</p>
           </article>
         </div>
         <div className="analysis-context-grid">
@@ -2239,9 +2253,9 @@ function SelectedDayReview({
           <button className="secondary-button" disabled={!analysisRunning} onClick={stopAnalysis} type="button">
             Stop
           </button>
-          {analysisReport && (showEngineDetails || playerLevel === "advanced") ? (
+          {scopedAnalysisReport && (showEngineDetails || playerLevel === "advanced") ? (
             <span className="status-tag">
-              Saved run: d{analysisReport.settings.depth} / {analysisReport.settings.moveTimeMs}ms
+              Saved run: d{scopedAnalysisReport.settings.depth} / {scopedAnalysisReport.settings.moveTimeMs}ms
             </span>
           ) : null}
           {playerLevel === "advanced" && selectedSingleGame ? (
@@ -2255,7 +2269,7 @@ function SelectedDayReview({
           </p>
         ) : null}
         {analysisError ? <p className="error-text">Engine analysis unavailable in this browser/build. {analysisError}</p> : null}
-        {analysisReport?.incomplete ? (
+        {scopedAnalysisReport?.incomplete ? (
           <p className="error-text">Analysis is incomplete. Some PGNs or positions were skipped.</p>
         ) : null}
       </div>
@@ -2295,13 +2309,13 @@ function SelectedDayReview({
         <section className="analysis-placeholder-panel">
           <h3>{playerLevel === "beginner" ? "Coach summary" : "Run summary"}</h3>
           <p>
-            {analysisReport
-              ? `Reviewed ${analysisReport.analyzedGameUrls.length} game(s). Start with ${analysisReport.criticalMoves.length} ${playerLevel === "beginner" ? "mistake" : "critical move"} card(s), then solve ${analysisReport.homeworkPuzzles.length} homework puzzle(s).`
+            {scopedAnalysisReport
+              ? `Reviewed ${scopedAnalysisReport.analyzedGameUrls.length} game(s). Start with ${scopedAnalysisReport.criticalMoves.length} ${playerLevel === "beginner" ? "mistake" : "critical move"} card(s), then solve ${scopedAnalysisReport.homeworkPuzzles.length} homework puzzle(s).`
               : playerLevel === "beginner"
                 ? `${savedRunStatusCopy(selectedScopeStatus, relatedScopeStatuses)} Run review for this day to get mistake cards and practice positions.`
                 : savedRunStatusCopy(selectedScopeStatus, relatedScopeStatuses)}
           </p>
-          {analysisReport ? (
+          {scopedAnalysisReport ? (
             <>
               <div className="review-next-actions">
                 <button className="secondary-button" onClick={() => onViewChange("critical")} type="button">
@@ -2313,7 +2327,7 @@ function SelectedDayReview({
                 <button
                   className="secondary-button primary-action"
                   disabled={!canUseInWeeklyReport}
-                  onClick={() => analysisReport && onUseAnalysisInWeeklyReport(analysisReport, day.date)}
+                  onClick={() => scopedAnalysisReport && onUseAnalysisInWeeklyReport(scopedAnalysisReport, day.date)}
                   type="button"
                 >
                   Use this analyzed day in Weekly Report
@@ -2326,9 +2340,9 @@ function SelectedDayReview({
               </p>
             </>
           ) : null}
-          {(showEngineDetails || playerLevel === "advanced") && analysisReport?.gameStatuses?.length ? (
+          {(showEngineDetails || playerLevel === "advanced") && scopedAnalysisReport?.gameStatuses?.length ? (
             <ul className="game-status-list">
-              {analysisReport.gameStatuses.map((status) => (
+              {scopedAnalysisReport.gameStatuses.map((status) => (
                 <li key={status.gameUrl}>
                   <strong>{status.status}</strong>: {status.analyzedMoveCount}/{status.candidateMoveCount} moves,{" "}
                   {status.criticalMoveCount} critical
@@ -2337,9 +2351,9 @@ function SelectedDayReview({
               ))}
             </ul>
           ) : null}
-          {(showEngineDetails || playerLevel === "advanced") && analysisReport?.skippedGames.length ? (
+          {(showEngineDetails || playerLevel === "advanced") && scopedAnalysisReport?.skippedGames.length ? (
             <ul className="skipped-game-list">
-              {analysisReport.skippedGames.slice(0, 4).map((game, index) => (
+              {scopedAnalysisReport.skippedGames.slice(0, 4).map((game, index) => (
                 <li key={`${game.gameUrl}-${index}`}>{game.reason}</li>
               ))}
             </ul>

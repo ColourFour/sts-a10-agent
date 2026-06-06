@@ -5,9 +5,12 @@ import { normalizeChessComGames } from "./chessGameNormalization";
 import { extractPlayerMovePositions } from "./chessPgnPositionExtraction";
 import {
   buildAnalysisCacheKey,
+  buildDayAnalysisCacheKey,
   classifyMoveImpact,
   defaultSelectedDayAnalysisSettings,
   rankCriticalMoves,
+  readRelatedDailyAnalysisStatuses,
+  summarizeCachedAnalysisStatus,
   writeCachedDailyAnalysis,
 } from "./chessSelectedDayAnalysis";
 import type { CriticalMoveAnalysis, DailyEngineAnalysisReport, NormalizedChessGame } from "./chessReportTypes";
@@ -206,6 +209,126 @@ describe("selected-day analysis helpers", () => {
         mateSwing: null,
       }),
     ).toMatchObject({ label: "Missed winning advantage", theme: "missed win" });
+  });
+
+  it("treats all-day and single-game saved analysis as separate scopes", () => {
+    installLocalStorageMock();
+    const normalizedGames = normalizeChessComGames(
+      [
+        game({ end_time: dayOneMorning, url: "https://www.chess.com/game/live/scope-1" }),
+        game({ end_time: dayOneAfternoon, url: "https://www.chess.com/game/live/scope-2" }),
+      ],
+      "TestPlayer",
+    );
+    const day = summarizeDailyChessGames(normalizedGames)[0];
+    const cacheKey = buildDayAnalysisCacheKey({
+      date: day.date,
+      games: day.games,
+      settings: defaultSelectedDayAnalysisSettings,
+      username: "TestPlayer",
+    });
+    const cachedReport: DailyEngineAnalysisReport = {
+      analyzedGameUrls: day.games.map((cachedGame) => cachedGame.gameUrl),
+      cacheKey,
+      completedAt: "2026-06-02T12:00:00.000Z",
+      criticalMoves: [],
+      gameStatuses: day.games.map((cachedGame) => ({
+        analyzedMoveCount: 1,
+        candidateMoveCount: 1,
+        criticalMoveCount: 0,
+        gameUrl: cachedGame.gameUrl,
+        status: "analyzed",
+      })),
+      homeworkPuzzles: [],
+      incomplete: false,
+      settings: defaultSelectedDayAnalysisSettings,
+      skippedGames: [],
+      source: "stockfish-lite-single",
+    };
+    writeCachedDailyAnalysis(cacheKey, cachedReport);
+
+    const allDayStatus = summarizeCachedAnalysisStatus({
+      date: day.date,
+      games: day.games,
+      settings: defaultSelectedDayAnalysisSettings,
+      username: "TestPlayer",
+    });
+    const singleGameStatus = summarizeCachedAnalysisStatus({
+      date: day.date,
+      games: [day.games[0]],
+      settings: defaultSelectedDayAnalysisSettings,
+      username: "TestPlayer",
+    });
+    const relatedStatuses = readRelatedDailyAnalysisStatuses({ date: day.date, username: "TestPlayer" });
+
+    expect(allDayStatus).toMatchObject({
+      analyzedGameCount: 2,
+      gameCount: 2,
+      status: "cached_complete",
+    });
+    expect(singleGameStatus).toMatchObject({
+      analyzedGameCount: 0,
+      gameCount: 1,
+      status: "not_analyzed",
+    });
+    expect(relatedStatuses.map((status) => status.cacheKey)).toContain(cacheKey);
+  });
+
+  it("finds related saved runs when current settings do not match", () => {
+    installLocalStorageMock();
+    const normalizedGames = normalizeChessComGames(
+      [game({ end_time: dayOneMorning, url: "https://www.chess.com/game/live/settings-1" })],
+      "TestPlayer",
+    );
+    const day = summarizeDailyChessGames(normalizedGames)[0];
+    const cacheKey = buildDayAnalysisCacheKey({
+      date: day.date,
+      games: day.games,
+      settings: defaultSelectedDayAnalysisSettings,
+      username: "TestPlayer",
+    });
+    writeCachedDailyAnalysis(cacheKey, {
+      analyzedGameUrls: day.games.map((cachedGame) => cachedGame.gameUrl),
+      cacheKey,
+      completedAt: "2026-06-02T12:00:00.000Z",
+      criticalMoves: [],
+      gameStatuses: [
+        {
+          analyzedMoveCount: 1,
+          candidateMoveCount: 1,
+          criticalMoveCount: 0,
+          gameUrl: day.games[0].gameUrl,
+          status: "analyzed",
+        },
+      ],
+      homeworkPuzzles: [],
+      incomplete: false,
+      settings: defaultSelectedDayAnalysisSettings,
+      skippedGames: [],
+      source: "stockfish-lite-single",
+    });
+
+    const mismatchedSettings = { ...defaultSelectedDayAnalysisSettings, depth: 12 };
+    const currentStatus = summarizeCachedAnalysisStatus({
+      date: day.date,
+      games: day.games,
+      settings: mismatchedSettings,
+      username: "TestPlayer",
+    });
+    const relatedStatuses = readRelatedDailyAnalysisStatuses({ date: day.date, username: "TestPlayer" });
+
+    expect(currentStatus).toMatchObject({
+      analyzedGameCount: 0,
+      gameCount: 1,
+      settings: mismatchedSettings,
+      status: "not_analyzed",
+    });
+    expect(relatedStatuses).toHaveLength(1);
+    expect(relatedStatuses[0]).toMatchObject({
+      cacheKey,
+      settings: defaultSelectedDayAnalysisSettings,
+      status: "cached_complete",
+    });
   });
 });
 

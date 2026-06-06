@@ -3315,6 +3315,7 @@ h3 {
 .fen-board {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
   width: 100%;
   aspect-ratio: 1;
   overflow: hidden;
@@ -3324,6 +3325,9 @@ h3 {
 }
 
 .fen-board.interactive .fen-square {
+  width: 100%;
+  height: 100%;
+  padding: 0;
   border: 0;
   appearance: none;
   cursor: pointer;
@@ -3337,7 +3341,11 @@ h3 {
   position: relative;
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
+  padding: 0;
   color: #161c21;
   font-size: clamp(1.05rem, 3vw, 2rem);
   font-weight: 900;
