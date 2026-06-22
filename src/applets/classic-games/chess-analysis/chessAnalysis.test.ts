@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ChessComApiGame } from "./chessComApi";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
+import { blakeChessTrainerConfig } from "./chessPersonalConfig";
+import { buildPersonalChessReport, classifyPersonalLeakTag } from "./chessPersonalInsights";
+import { normalizePersonalChessComGames } from "./chessPersonalImport";
+import { importPersonalChessGames, readPersonalChessGames, schedulePersonalDrillReview } from "./chessPersonalStore";
+import type { PersonalChessMistake } from "./chessPersonalTypes";
 import { extractPlayerMovePositions } from "./chessPgnPositionExtraction";
 import {
   buildAnalysisCacheKey,
@@ -68,6 +73,7 @@ function installLocalStorageMock() {
 
 afterEach(() => {
   Reflect.deleteProperty(globalThis, "window");
+  Reflect.deleteProperty(globalThis, "indexedDB");
 });
 
 describe("Chess.com game normalization", () => {
@@ -140,6 +146,293 @@ describe("daily chess summaries", () => {
       losses: 1,
       netChange: 0,
     });
+  });
+});
+
+describe("personal chess trainer import and reports", () => {
+  const scandinavianLossPgn = [
+    '[Event "Rated Rapid"]',
+    '[Site "Chess.com"]',
+    '[Date "2026.06.02"]',
+    '[Round "-"]',
+    '[White "TestPlayer"]',
+    '[Black "Opponent"]',
+    '[Result "0-1"]',
+    '[ECO "B01"]',
+    '[Opening "Scandinavian Defense"]',
+    '[TimeControl "600"]',
+    '[Termination "TestPlayer resigned"]',
+    "",
+    "1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe5+ 0-1",
+  ].join("\n");
+
+  function personalMistake(overrides: Partial<PersonalChessMistake> = {}): PersonalChessMistake {
+    return {
+      bestMove: "g1f3",
+      centipawnLoss: 360,
+      createdAt: "2026-06-22T12:00:00.000Z",
+      date: "2026-06-02",
+      evalAfter: { type: "cp", value: -250 },
+      evalBefore: { type: "cp", value: 110 },
+      evalDrop: 360,
+      fenAfter: "rnbqkbnr/ppp1pppp/8/3q4/8/2N5/PPPP1PPP/R1BQKBNR b KQkq - 1 3",
+      fenBefore: "rnb1kbnr/ppp1pppp/8/3q4/8/8/PPPP1PPP/RNBQKBNR w KQkq - 0 3",
+      gameId: "report-1",
+      gameUrl: "https://www.chess.com/game/live/report-1",
+      id: "report-1:3:b1c3",
+      leakTag: "opening-plan-failure",
+      moveNumber: 3,
+      playedMove: "Nc3",
+      playedMoveUci: "b1c3",
+      playerColor: "white",
+      sideToMove: "white",
+      source: "stockfish-lite-single",
+      timeClass: "rapid",
+      ...overrides,
+    };
+  }
+
+  it("defaults Blake's configured Chess.com username to sbrooker02", () => {
+    expect(blakeChessTrainerConfig.defaultUsername).toBe("sbrooker02");
+  });
+
+  it("schedules personal drill reviews later after success and sooner after misses", () => {
+    const firstSolved = schedulePersonalDrillReview(undefined, "solved", "2026-06-22");
+    const secondSolved = schedulePersonalDrillReview(firstSolved, "solved", "2026-06-25");
+    const failed = schedulePersonalDrillReview(secondSolved, "failed", "2026-07-01");
+    const needsReview = schedulePersonalDrillReview(failed, "needs-review", "2026-07-02");
+
+    expect(firstSolved).toMatchObject({
+      attempts: 1,
+      correct: 1,
+      incorrect: 0,
+      intervalDays: 3,
+      lastReviewedDate: "2026-06-22",
+      nextDueDate: "2026-06-25",
+      status: "solved",
+    });
+    expect(secondSolved).toMatchObject({
+      attempts: 2,
+      correct: 2,
+      intervalDays: 6,
+      nextDueDate: "2026-07-01",
+    });
+    expect(failed).toMatchObject({
+      attempts: 3,
+      correct: 2,
+      incorrect: 1,
+      intervalDays: 1,
+      nextDueDate: "2026-07-02",
+      status: "failed",
+    });
+    expect(needsReview).toMatchObject({
+      attempts: 4,
+      incorrect: 2,
+      intervalDays: 0,
+      nextDueDate: "2026-07-02",
+      status: "needs-review",
+    });
+  });
+
+  it("normalizes full personal game metadata and computes rating changes by time class", () => {
+    const personalGames = normalizePersonalChessComGames(
+      [
+        game({
+          end_time: dayOneMorning,
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/personal-1",
+          white: { rating: 1600, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1590, result: "win", username: "Opponent" },
+        }),
+        game({
+          end_time: dayOneAfternoon,
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/personal-2",
+          white: { rating: 1584, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1588, result: "win", username: "Opponent" },
+        }),
+        game({
+          end_time: dayTwo,
+          pgn: scandinavianLossPgn,
+          time_class: "daily",
+          url: "https://www.chess.com/game/daily/personal-3",
+          white: { rating: 1200, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1210, result: "win", username: "Opponent" },
+        }),
+      ],
+      "TestPlayer",
+    );
+
+    expect(personalGames).toHaveLength(3);
+    expect(personalGames[0]).toMatchObject({
+      eco: "B01",
+      gameId: "personal-1",
+      moveCount: 3,
+      normalizedResult: "loss",
+      opening: "Scandinavian Defense",
+      ratingChange: null,
+      result: "resigned",
+      timeClass: "rapid",
+      timeControl: "600",
+    });
+    expect(personalGames[1].ratingChange).toBe(-16);
+    expect(personalGames[2]).toMatchObject({
+      timeClass: "daily",
+    });
+  });
+
+  it("stores personal imports without duplicating existing game URLs", async () => {
+    installLocalStorageMock();
+    Object.defineProperty(globalThis, "indexedDB", {
+      configurable: true,
+      value: undefined,
+    });
+    const personalGames = normalizePersonalChessComGames(
+      [
+        game({
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/personal-store-1",
+          white: { rating: 1600, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1590, result: "win", username: "Opponent" },
+        }),
+      ],
+      "TestPlayer",
+    );
+
+    const firstImport = await importPersonalChessGames(personalGames);
+    const secondImport = await importPersonalChessGames(personalGames);
+    const storedGames = await readPersonalChessGames();
+
+    expect(firstImport).toMatchObject({ duplicateCount: 0, insertedCount: 1, totalCount: 1 });
+    expect(secondImport).toMatchObject({ duplicateCount: 1, insertedCount: 0, totalCount: 1, updatedCount: 0 });
+    expect(storedGames).toHaveLength(1);
+  });
+
+  it("builds Blake's personal dashboard and leak report from recent games", () => {
+    const personalGames = normalizePersonalChessComGames(
+      [
+        game({
+          end_time: dayOneMorning,
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/report-1",
+          white: { rating: 1600, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1590, result: "win", username: "Opponent" },
+        }),
+        game({
+          end_time: dayOneAfternoon,
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/report-2",
+          white: { rating: 1578, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1588, result: "win", username: "Opponent" },
+        }),
+        game({
+          end_time: dayTwo,
+          pgn: '[Event "Rated Blitz"]\n[ECO "C20"]\n[Opening "King Pawn Game"]\n[Result "1-0"]\n\n1. e4 e5 1-0',
+          time_class: "blitz",
+          url: "https://www.chess.com/game/live/report-3",
+          white: { rating: 1510, result: "win", username: "TestPlayer" },
+          black: { rating: 1500, result: "checkmated", username: "Opponent" },
+        }),
+      ],
+      "TestPlayer",
+    );
+
+    const report = buildPersonalChessReport({
+      games: personalGames,
+      now: new Date("2026-06-22T12:00:00Z"),
+    });
+
+    expect(report.totalGames).toBe(3);
+    expect(report.currentRatings.rapid).toBe(1578);
+    expect(report.timeClassSummaries.find((summary) => summary.timeClass === "rapid")).toMatchObject({
+      gamesPlayed: 2,
+      losses: 2,
+      ratingChange90: -22,
+    });
+    expect(report.openingLeakTable[0]).toMatchObject({
+      color: "white",
+      eco: "B01",
+      losses: 2,
+      opening: "Scandinavian Defense",
+      recommendation: "Quarantine",
+      scorePercent: 0,
+      shortLosses: 2,
+    });
+    expect(report.sessionRules).toMatchObject({
+      reviewRapidLossBeforeNextRapid: true,
+      stopAfterLosses: 2,
+    });
+    expect(report.rapidDeclineReport).toContain("Rapid is down 22 point");
+  });
+
+  it("builds due drill queues and links weak openings to matching drills", () => {
+    const personalGames = normalizePersonalChessComGames(
+      [
+        game({
+          end_time: dayOneMorning,
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/report-1",
+          white: { rating: 1600, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1590, result: "win", username: "Opponent" },
+        }),
+        game({
+          end_time: dayOneAfternoon,
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/report-2",
+          white: { rating: 1578, result: "resigned", username: "TestPlayer" },
+          black: { rating: 1588, result: "win", username: "Opponent" },
+        }),
+      ],
+      "TestPlayer",
+    );
+    const mistake = personalMistake();
+
+    const report = buildPersonalChessReport({
+      games: personalGames,
+      mistakes: [mistake],
+      now: new Date("2026-06-22T12:00:00Z"),
+    });
+
+    expect(report.dueDrillCount).toBe(1);
+    expect(report.dueDrillQueue[0]).toMatchObject({
+      dueToday: true,
+      id: mistake.id,
+      status: "needs-review",
+    });
+    expect(report.dueDrillQueue[0].review).toMatchObject({
+      attempts: 0,
+      nextDueDate: "2026-06-22",
+    });
+    expect(report.sessionGuardrails).toContain("Do today's repair before rated rapid.");
+    expect(report.openingLeakTable[0]).toMatchObject({
+      drillIds: [mistake.id],
+      recommendation: "Quarantine",
+    });
+  });
+
+  it("classifies simple personal leak tags", () => {
+    const timeoutGame = normalizePersonalChessComGames(
+      [
+        game({
+          pgn: scandinavianLossPgn,
+          time_class: "rapid",
+          url: "https://www.chess.com/game/live/tag-1",
+          white: { rating: 1600, result: "timeout", username: "TestPlayer" },
+          black: { rating: 1590, result: "win", username: "Opponent" },
+        }),
+      ],
+      "TestPlayer",
+    )[0];
+
+    expect(classifyPersonalLeakTag({ game: timeoutGame })).toBe("time-pressure");
+    expect(classifyPersonalLeakTag({ moveNumber: 5 })).toBe("opening-plan-failure");
   });
 });
 

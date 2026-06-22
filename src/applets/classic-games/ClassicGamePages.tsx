@@ -1806,8 +1806,8 @@ export function ChessPage() {
 export function ChessComAnalysisPage() {
   return (
     <AppletPageShell
-      title="Chess.com Analysis"
-      subtitle="Load public Chess.com blitz and rapid games, review rating movement, and run selected-day browser Stockfish analysis."
+      title="Blake Chess Trainer"
+      subtitle="Import Blake's Chess.com games, diagnose leaks, generate personal drills, and guide the next rated session."
     >
       <ChessComAnalysisPanel />
     </AppletPageShell>

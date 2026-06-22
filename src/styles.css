@@ -2355,6 +2355,324 @@ h3 {
   font-weight: 850;
 }
 
+.personal-trainer-panel,
+.personal-dashboard-section,
+.personal-leak-section,
+.personal-session-panel,
+.personal-drill-bank {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.personal-sync-panel,
+.personal-focus-panel,
+.personal-session-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(240, 198, 111, 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(240, 198, 111, 0.08), rgba(118, 166, 230, 0.045)),
+    rgba(10, 13, 17, 0.42);
+}
+
+.personal-sync-controls,
+.personal-sync-meta,
+.personal-streak-row,
+.session-guardrail-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+}
+
+.personal-sync-controls .field {
+  min-width: min(100%, 220px);
+}
+
+.personal-sync-meta span,
+.personal-streak-row span,
+.session-guardrail-list span {
+  padding: 6px 8px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.14);
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.session-guardrail-list span {
+  border-color: rgba(255, 223, 150, 0.28);
+  color: #ffedc0;
+  background: rgba(240, 198, 111, 0.1);
+}
+
+.personal-focus-panel {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.95fr);
+  align-items: center;
+}
+
+.personal-focus-panel h3 {
+  font-size: 1.32rem;
+  line-height: 1.24;
+}
+
+.personal-focus-stats,
+.personal-summary-grid,
+.personal-output-grid,
+.personal-color-grid,
+.personal-leak-grid,
+.personal-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.personal-stat-card,
+.personal-time-summary-card,
+.personal-output-grid article,
+.personal-color-grid article,
+.personal-leak-grid article,
+.personal-rule-grid article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.personal-stat-card span,
+.personal-color-grid span,
+.personal-leak-grid span,
+.personal-rule-grid span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.34;
+}
+
+.personal-stat-card strong,
+.personal-output-grid strong,
+.personal-color-grid strong,
+.personal-leak-grid strong,
+.personal-rule-grid strong {
+  color: var(--text);
+  line-height: 1.28;
+}
+
+.personal-stat-card.tone-positive strong {
+  color: #a8ffcf;
+}
+
+.personal-stat-card.tone-negative strong {
+  color: #ffb4a8;
+}
+
+.personal-time-summary-card h3 {
+  color: #f2cc7c;
+  font-size: 0.86rem;
+  text-transform: uppercase;
+}
+
+.personal-opening-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.personal-opening-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+}
+
+.personal-opening-table th,
+.personal-opening-table td {
+  padding: 9px;
+  border-bottom: 1px solid rgba(232, 220, 200, 0.11);
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.personal-opening-table th {
+  color: #f2cc7c;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.personal-opening-table a {
+  color: var(--text);
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.personal-opening-table a:hover {
+  text-decoration: underline;
+}
+
+.personal-opening-table tr.opening-row-quarantine td {
+  background: rgba(217, 92, 80, 0.07);
+}
+
+.personal-opening-table tr.opening-row-repair td {
+  background: rgba(240, 198, 111, 0.055);
+}
+
+.recommendation-pill {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.recommendation-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.recommendation-keep {
+  color: #a8ffcf;
+  background: rgba(47, 182, 118, 0.13);
+}
+
+.recommendation-repair {
+  color: #ffdf96;
+  background: rgba(240, 198, 111, 0.14);
+}
+
+.recommendation-quarantine {
+  color: #ffb4a8;
+  background: rgba(217, 92, 80, 0.16);
+}
+
+.opening-drill-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inline-link-button {
+  padding: 0;
+  border: 0;
+  color: #dcecff;
+  background: transparent;
+  font: inherit;
+  font-weight: 900;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.personal-volume-list {
+  display: grid;
+  gap: 8px;
+}
+
+.personal-volume-list span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(232, 220, 200, 0.12);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(10, 13, 17, 0.34);
+}
+
+.personal-volume-list strong {
+  color: var(--text);
+}
+
+.personal-drill-list {
+  display: grid;
+  gap: 12px;
+}
+
+.personal-drill-card {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 8px;
+  background: rgba(10, 13, 17, 0.44);
+}
+
+.personal-drill-card.selected {
+  border-color: rgba(118, 166, 230, 0.58);
+  box-shadow: 0 0 0 3px rgba(118, 166, 230, 0.14);
+}
+
+.personal-drill-card.drill-due,
+.personal-drill-card.drill-needs-review {
+  border-color: rgba(255, 223, 150, 0.28);
+}
+
+.personal-drill-card.drill-failed {
+  border-color: rgba(255, 180, 168, 0.3);
+}
+
+.personal-drill-card.drill-solved {
+  border-color: rgba(168, 255, 207, 0.22);
+}
+
+.personal-drill-copy {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.personal-drill-copy h3 {
+  font-size: 1rem;
+}
+
+.due-repair-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.due-repair-panel.has-due {
+  border-color: rgba(255, 223, 150, 0.34);
+  color: #ffedc0;
+  background: rgba(240, 198, 111, 0.09);
+}
+
+.due-repair-panel strong {
+  color: var(--text);
+}
+
+.drill-review-grid {
+  grid-template-columns: repeat(auto-fit, minmax(122px, 1fr));
+}
+
 .chess-analysis-days {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
@@ -3248,9 +3566,16 @@ h3 {
   background: rgba(47, 182, 118, 0.13);
 }
 
-.homework-state-pill.state-skipped {
+.homework-state-pill.state-skipped,
+.homework-state-pill.state-due,
+.homework-state-pill.state-needs-review {
   color: #ffdf96;
   background: rgba(240, 198, 111, 0.13);
+}
+
+.homework-state-pill.state-failed {
+  color: #ffb4a8;
+  background: rgba(217, 92, 80, 0.15);
 }
 
 .homework-hint {
@@ -3378,7 +3703,9 @@ h3 {
 }
 
 .fen-square.played::after,
-.fen-square.best::before {
+.fen-square.best::before,
+.fen-square.last::after,
+.fen-square.mistake::after {
   position: absolute;
   inset: 2px;
   border: 2px solid transparent;
@@ -3387,8 +3714,14 @@ h3 {
   pointer-events: none;
 }
 
-.fen-square.played::after {
+.fen-square.played::after,
+.fen-square.last::after {
   border-color: rgba(255, 196, 85, 0.88);
+}
+
+.fen-square.mistake::after {
+  border-color: rgba(217, 92, 80, 0.94);
+  background: rgba(217, 92, 80, 0.16);
 }
 
 .fen-square.best::before {
@@ -3569,7 +3902,9 @@ h3 {
 
   .critical-move-list li,
   .homework-puzzle-list li,
-  .focused-review-card {
+  .focused-review-card,
+  .personal-drill-card,
+  .personal-focus-panel {
     grid-template-columns: 1fr;
   }
 }

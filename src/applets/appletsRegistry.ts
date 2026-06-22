@@ -12,9 +12,9 @@ export type AppletRegistryEntry = {
 export const appletsRegistry: AppletRegistryEntry[] = [
   {
     id: "chess-com-analysis",
-    title: "Chess.com Analysis",
+    title: "Blake Chess Trainer",
     description:
-      "Load public Chess.com games, review rating movement, and run browser Stockfish study queues.",
+      "Import Blake's Chess.com history, diagnose leaks, and generate personal repair drills.",
     route: "/applets/chess-com-analysis",
     status: "Playable Prototype",
     tags: ["Chess", "Analysis", "Training"],

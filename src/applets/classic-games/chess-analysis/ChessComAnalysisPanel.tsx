@@ -1,5 +1,5 @@
 import { Chess, type Square as ChessSquare } from "chess.js";
-import { Search } from "lucide-react";
+import { Brain, CheckCircle2, Download, Eye, Repeat2, Search, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   fetchRecentChessComGames,
@@ -8,6 +8,37 @@ import {
 } from "./chessComApi";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
+import { blakeChessTrainerConfig, readConfiguredChessComUsername, saveConfiguredChessComUsername } from "./chessPersonalConfig";
+import { analyzeRecentRapidLosses } from "./chessPersonalEngine";
+import {
+  buildPersonalChessReport,
+  leakTagLabels,
+  type PersonalChessReport,
+  type PersonalOpeningLeak,
+  type PersonalTimeClassSummary,
+} from "./chessPersonalInsights";
+import { normalizePersonalChessComGames } from "./chessPersonalImport";
+import {
+  importPersonalChessGames,
+  readPersonalChessGames,
+  readPersonalChessMistakes,
+  readPersonalChessSyncMeta,
+  readPersonalDrillReviews,
+  replacePersonalChessMistakes,
+  writePersonalChessSyncMeta,
+  writePersonalDrillReview,
+} from "./chessPersonalStore";
+import { fetchPersonalChessComHistory, type PersonalChessSyncProgress, type PersonalChessSyncScope } from "./chessPersonalSync";
+import type {
+  PersonalChessGame,
+  PersonalChessImportResult,
+  PersonalChessMistake,
+  PersonalChessSyncMeta,
+  PersonalChessTimeClass,
+  PersonalDrillReview,
+  PersonalDrillStatus,
+} from "./chessPersonalTypes";
+import { personalGamesToNormalized } from "./chessPersonalTypes";
 import {
   analyzeSelectedDayGames,
   buildDayAnalysisCacheKey,
@@ -43,10 +74,12 @@ import type {
 } from "./chessReportTypes";
 
 const timeClasses: ChessComTrackedTimeClass[] = ["bullet", "blitz", "rapid"];
-type AnalysisView = "analysis" | "rating" | "critical" | "homework" | "weekly";
+const personalTimeClasses: PersonalChessTimeClass[] = ["rapid", "blitz", "bullet", "daily", "other"];
+type AnalysisView = "analysis" | "critical" | "homework" | "personal" | "rating" | "weekly";
 type PlayerLevel = "beginner" | "intermediate" | "advanced";
 
 const analysisViews: { id: AnalysisView; labels: Record<PlayerLevel, string> }[] = [
+  { id: "personal", labels: { advanced: "Dashboard", beginner: "Dashboard", intermediate: "Dashboard" } },
   { id: "analysis", labels: { advanced: "Analysis", beginner: "Coach Review", intermediate: "Review" } },
   { id: "rating", labels: { advanced: "Rating Trend", beginner: "Rating", intermediate: "Rating Trend" } },
   { id: "critical", labels: { advanced: "Critical Moves", beginner: "Mistakes", intermediate: "Critical Moves" } },
@@ -378,6 +411,7 @@ function PlayableAnalysisBoard({
   allowEnginePanel = false,
   bestMove,
   fen,
+  lastMove: providedLastMove,
   orientation,
   playedMove,
 }: {
@@ -385,6 +419,7 @@ function PlayableAnalysisBoard({
   allowEnginePanel?: boolean;
   bestMove?: string;
   fen: string;
+  lastMove?: string;
   orientation: "black" | "white";
   playedMove?: string;
 }) {
@@ -493,7 +528,7 @@ function PlayableAnalysisBoard({
   );
   const highlightedPlayed = moveSquares(playedMove ?? "");
   const highlightedBest = moveSquares(bestMove ?? "");
-  const highlightedLast = moveSquares(lastMove ?? "");
+  const highlightedLast = moveSquares(lastMove ?? providedLastMove ?? "");
 
   return (
     <div className="playable-analysis-board">
@@ -504,7 +539,8 @@ function PlayableAnalysisBoard({
               const piece = game.get(square);
               const isSelected = selectedSquare === square;
               const isLegal = legalTargets.has(square);
-              const isPlayed = highlightedPlayed.has(square) || highlightedLast.has(square);
+              const isPlayed = highlightedPlayed.has(square);
+              const isLast = highlightedLast.has(square);
               const isBest = highlightedBest.has(square) || topMoveSquares.has(square);
               const rank = square[1];
               const file = square[0];
@@ -512,7 +548,7 @@ function PlayableAnalysisBoard({
               return (
                 <button
                   aria-label={`${square}${piece ? ` ${piece.color === "w" ? "white" : "black"} ${piece.type}` : " empty"}`}
-                  className={`fen-square ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${isPlayed ? "played" : ""} ${isBest ? "best" : ""} ${isSelected ? "selected" : ""} ${isLegal ? "legal" : ""}`}
+                  className={`fen-square ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${isPlayed ? "played" : ""} ${isLast ? "last" : ""} ${isBest ? "best" : ""} ${isSelected ? "selected" : ""} ${isLegal ? "legal" : ""}`}
                   key={square}
                   onClick={() => handleSquareClick(square)}
                   type="button"
@@ -597,12 +633,16 @@ function dailySummaryText(day: DailyChessSummary): string {
 function FenBoard({
   bestMove,
   fen,
+  lastMove,
+  mistakeMove,
   orientation,
   playedMove,
   size = "compact",
 }: {
   bestMove?: string;
   fen: string;
+  lastMove?: string;
+  mistakeMove?: string;
   orientation: "black" | "white";
   playedMove?: string;
   size?: "compact" | "large";
@@ -611,6 +651,8 @@ function FenBoard({
   const orientedRows = orientation === "black" ? [...rows].reverse().map((row) => [...row].reverse()) : rows;
   const highlightedPlayed = moveSquares(playedMove ?? "");
   const highlightedBest = moveSquares(bestMove ?? "");
+  const highlightedLast = moveSquares(lastMove ?? "");
+  const highlightedMistake = moveSquares(mistakeMove ?? "");
 
   return (
     <div className={`fen-board-wrap ${size === "large" ? "large" : ""}`} aria-label="Chess position">
@@ -622,10 +664,12 @@ function FenBoard({
             const square = `${file}${rank}`;
             const isPlayed = highlightedPlayed.has(square);
             const isBest = highlightedBest.has(square);
+            const isLast = highlightedLast.has(square);
+            const isMistake = highlightedMistake.has(square);
             return (
               <span
                 aria-label={`${square}${piece ? ` ${piece}` : " empty"}`}
-                className={`fen-square ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${isPlayed ? "played" : ""} ${isBest ? "best" : ""}`}
+                className={`fen-square ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"} ${isPlayed ? "played" : ""} ${isLast ? "last" : ""} ${isBest ? "best" : ""} ${isMistake ? "mistake" : ""}`}
                 key={`${square}-${rowIndex}-${colIndex}`}
               >
                 {colIndex === 0 ? <span className="fen-rank-label">{rank}</span> : null}
@@ -867,8 +911,9 @@ function FocusedCriticalMove({
         allowEnginePanel={allowEnginePanel}
         bestMove={positionView === "before" ? move.bestMove : undefined}
         fen={boardFen}
+        lastMove={positionView === "after" ? move.playedMoveUci : undefined}
         orientation={move.sideToMove}
-        playedMove={move.playedMoveUci}
+        playedMove={positionView === "before" ? move.playedMoveUci : undefined}
       />
       <div className="focused-review-copy">
         <div className="card-topline">
@@ -1455,6 +1500,656 @@ function analysisSettingsEqual(left: SelectedDayAnalysisSettings, right: Selecte
     left.maxGames === right.maxGames &&
     left.maxMoves === right.maxMoves &&
     left.moveTimeMs === right.moveTimeMs
+  );
+}
+
+function personalTimeControlLabel(timeClass: PersonalChessTimeClass): string {
+  return timeClass[0].toUpperCase() + timeClass.slice(1);
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+function formatStoredDate(date: string | null): string {
+  return date ? formatDateLabel(date) : "n/a";
+}
+
+function formatSyncTime(value: string | null | undefined): string {
+  if (!value) {
+    return "Never";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+  }).format(new Date(value));
+}
+
+function PersonalStatCard({ label, tone = "neutral", value }: { label: string; tone?: "negative" | "neutral" | "positive"; value: string }) {
+  return (
+    <article className={`personal-stat-card tone-${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function PersonalTimeSummaryCard({ summary }: { summary: PersonalTimeClassSummary }) {
+  return (
+    <article className="personal-time-summary-card">
+      <div className="card-topline">
+        <h3>{personalTimeControlLabel(summary.timeClass)}</h3>
+        <span className={`rating-delta ${ratingDeltaClass(summary.ratingChange90)}`}>
+          {formatNetChange(summary.ratingChange90)}
+        </span>
+      </div>
+      <div className="chess-analysis-metrics">
+        <SummaryMetric label="current" value={formatRating(summary.currentRating)} />
+        <SummaryMetric label="games" value={summary.gamesPlayed} />
+        <SummaryMetric label="score" value={formatPercent(summary.scorePercent)} />
+        <SummaryMetric label="W-L-D" value={`${summary.wins}-${summary.losses}-${summary.draws}`} />
+      </div>
+    </article>
+  );
+}
+
+function PersonalSyncPanel({
+  importResult,
+  loading,
+  meta,
+  onSync,
+  onUsernameChange,
+  progress,
+  syncError,
+  username,
+}: {
+  importResult: PersonalChessImportResult | null;
+  loading: boolean;
+  meta: PersonalChessSyncMeta | null;
+  onSync: (scope: PersonalChessSyncScope) => void;
+  onUsernameChange: (username: string) => void;
+  progress: PersonalChessSyncProgress | null;
+  syncError: string | null;
+  username: string;
+}) {
+  const [scope, setScope] = useState<PersonalChessSyncScope>("all");
+  const progressCopy =
+    progress && progress.total > 0
+      ? `${progress.message} ${Math.min(progress.current + 1, progress.total)} / ${progress.total}`
+      : progress?.message ?? null;
+
+  return (
+    <section className="personal-sync-panel" aria-label="Game sync and import">
+      <div>
+        <p className="eyebrow">Game sync</p>
+        <h3>Chess.com import</h3>
+      </div>
+      <div className="personal-sync-controls">
+        <label className="field">
+          <span>Blake's Chess.com username</span>
+          <input
+            autoComplete="off"
+            placeholder={blakeChessTrainerConfig.defaultUsername}
+            value={username}
+            onChange={(event) => onUsernameChange(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>Archives</span>
+          <select value={scope} onChange={(event) => setScope(event.target.value as PersonalChessSyncScope)}>
+            <option value="all">All public archives</option>
+            <option value="recent">Recent 3 archives</option>
+          </select>
+        </label>
+        <button className="secondary-button primary-action" disabled={loading} onClick={() => onSync(scope)} type="button">
+          <Download size={17} aria-hidden="true" />
+          {loading ? "Syncing" : "Sync games"}
+        </button>
+      </div>
+      <div className="personal-sync-meta">
+        <span>Last sync: {formatSyncTime(meta?.lastSyncedAt)}</span>
+        <span>Imported games: {meta?.importedGameCount ?? 0}</span>
+        <span>Archives: {meta?.archiveUrls.length ?? 0}</span>
+        {importResult ? (
+          <span>
+            New {importResult.insertedCount}, updated {importResult.updatedCount}, duplicates {importResult.duplicateCount}
+          </span>
+        ) : null}
+      </div>
+      {progressCopy ? <p className="helper-text" role="status">{progressCopy}</p> : null}
+      {syncError ? <p className="error-text">{syncError}</p> : null}
+    </section>
+  );
+}
+
+function PersonalDashboardSection({ report }: { report: PersonalChessReport }) {
+  const rapidSummary = report.timeClassSummaries.find((summary) => summary.timeClass === "rapid");
+  const worst = report.worstRecentTimeClass;
+
+  return (
+    <section className="personal-dashboard-section" aria-label="Personal dashboard">
+      <div className="personal-focus-panel">
+        <div>
+          <p className="eyebrow">Today's focus</p>
+          <h3>{report.todaysFocus}</h3>
+        </div>
+        <div className="personal-focus-stats">
+          <PersonalStatCard label="Imported" value={`${report.totalGames}`} />
+          <PersonalStatCard label="Range" value={`${formatStoredDate(report.importedRange.start)} - ${formatStoredDate(report.importedRange.end)}`} />
+          <PersonalStatCard
+            label="Worst recent"
+            tone={(worst?.ratingChange90 ?? 0) < 0 ? "negative" : "neutral"}
+            value={worst ? `${personalTimeControlLabel(worst.timeClass)} ${formatNetChange(worst.ratingChange90)}` : "n/a"}
+          />
+          <PersonalStatCard
+            label="Rapid 90d"
+            tone={(rapidSummary?.ratingChange90 ?? 0) < 0 ? "negative" : (rapidSummary?.ratingChange90 ?? 0) > 0 ? "positive" : "neutral"}
+            value={formatNetChange(rapidSummary?.ratingChange90 ?? null)}
+          />
+        </div>
+      </div>
+      <div className="personal-summary-grid">
+        {report.timeClassSummaries.map((summary) => (
+          <PersonalTimeSummaryCard key={summary.timeClass} summary={summary} />
+        ))}
+      </div>
+      <div className="personal-output-grid">
+        <article>
+          <p className="eyebrow">Rating trend summary</p>
+          <strong>{report.ratingTrendSummary}</strong>
+        </article>
+        <article>
+          <p className="eyebrow">Rapid decline report</p>
+          <strong>{report.rapidDeclineReport}</strong>
+        </article>
+        <article>
+          <p className="eyebrow">Tilt/session report</p>
+          <strong>{report.tiltSessionReport}</strong>
+        </article>
+      </div>
+      <div className="personal-color-grid">
+        {report.scoreByColor.map((summary) => (
+          <article key={summary.color}>
+            <p className="eyebrow">{sideLabel(summary.color)}</p>
+            <strong>{formatPercent(summary.scorePercent)} score</strong>
+            <span>
+              {summary.gamesPlayed} game(s), {summary.wins}-{summary.losses}-{summary.draws}
+            </span>
+          </article>
+        ))}
+      </div>
+      <div className="personal-streak-row">
+        {report.lossStreaks
+          .filter((streak) => personalTimeClasses.includes(streak.timeClass))
+          .map((streak) => (
+            <span key={streak.timeClass}>
+              {personalTimeControlLabel(streak.timeClass)} streak: current {streak.current}, max {streak.max}
+            </span>
+          ))}
+      </div>
+    </section>
+  );
+}
+
+function recommendationClass(recommendation: PersonalOpeningLeak["recommendation"]): string {
+  return recommendation.toLowerCase();
+}
+
+function OpeningLeakTable({
+  onSelectDrill,
+  openings,
+}: {
+  onSelectDrill: (drillId: string) => void;
+  openings: PersonalOpeningLeak[];
+}) {
+  if (openings.length === 0) {
+    return <p className="helper-text">No repeated opening leak is visible in the current 90-day window.</p>;
+  }
+
+  return (
+    <div className="personal-opening-table-wrap">
+      <div className="recommendation-legend" aria-label="Opening repair recommendation labels">
+        {(["Keep", "Repair", "Quarantine"] as PersonalOpeningLeak["recommendation"][]).map((recommendation) => (
+          <span className={`recommendation-pill recommendation-${recommendationClass(recommendation)}`} key={recommendation}>
+            {recommendation}
+          </span>
+        ))}
+      </div>
+      <table className="personal-opening-table">
+        <thead>
+          <tr>
+            <th>Opening</th>
+            <th>Color</th>
+            <th>Score</th>
+            <th>Games</th>
+            <th>Losses</th>
+            <th>Avg moves</th>
+            <th>Failure phase</th>
+            <th>Drills</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {openings.map((opening) => (
+            <tr className={`opening-row-${recommendationClass(opening.recommendation)}`} key={`${opening.color}-${opening.eco}-${opening.opening}`}>
+              <td>
+                <a href={opening.sampleGameUrl} target="_blank" rel="noreferrer">
+                  {opening.eco} {opening.opening}
+                </a>
+              </td>
+              <td>{sideLabel(opening.color)}</td>
+              <td>{formatPercent(opening.scorePercent)}</td>
+              <td>{opening.gamesPlayed}</td>
+              <td>{opening.losses}/{opening.gamesPlayed}</td>
+              <td>{opening.averageMoveCount ?? "n/a"}</td>
+              <td>{opening.commonFailurePhase ?? "n/a"}</td>
+              <td>
+                {opening.drillIds.length > 0 ? (
+                  <div className="opening-drill-links">
+                    {opening.drillIds.slice(0, 3).map((drillId, index) => (
+                      <button className="inline-link-button" key={drillId} onClick={() => onSelectDrill(drillId)} type="button">
+                        Drill {index + 1}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  "None yet"
+                )}
+              </td>
+              <td>
+                <span className={`recommendation-pill recommendation-${recommendationClass(opening.recommendation)}`}>
+                  {opening.recommendation}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PersonalLeakReportSection({
+  onSelectDrill,
+  report,
+}: {
+  onSelectDrill: (drillId: string) => void;
+  report: PersonalChessReport;
+}) {
+  const leakReport = report.leakReport;
+
+  return (
+    <section className="personal-leak-section" aria-label="Leak report">
+      <div className="analysis-section-heading">
+        <p className="eyebrow">Leak report v1</p>
+        <h3>Metadata leaks from Blake's recent games</h3>
+      </div>
+      <div className="personal-leak-grid">
+        <article>
+          <p className="eyebrow">Repeated losses by color</p>
+          <strong>
+            {leakReport.repeatedLossColor
+              ? `${sideLabel(leakReport.repeatedLossColor.color)} loss rate ${formatPercent(leakReport.repeatedLossColor.lossRate)}`
+              : "No color-specific loss pattern yet"}
+          </strong>
+        </article>
+        <article>
+          <p className="eyebrow">Short losses</p>
+          <strong>{leakReport.shortLosses.length} under 25 moves</strong>
+        </article>
+        <article>
+          <p className="eyebrow">Timeouts</p>
+          <strong>{leakReport.timeouts.length} recent timeout loss(es)</strong>
+        </article>
+        <article>
+          <p className="eyebrow">Resignations</p>
+          <strong>{leakReport.resignationLosses} recent resignation loss(es)</strong>
+        </article>
+        <article>
+          <p className="eyebrow">After a loss</p>
+          <strong>{formatPercent(leakReport.lossAfterLoss.scorePercent)} score</strong>
+          <span>{leakReport.lossAfterLoss.games} follow-up game(s)</span>
+        </article>
+        <article>
+          <p className="eyebrow">Bullet before rapid</p>
+          <strong>{leakReport.bulletBeforeRapidWarning ? "Avoid before rapid" : "No clear warning"}</strong>
+        </article>
+      </div>
+      <section className="analysis-placeholder-panel">
+        <h3>Opening repair table</h3>
+        <OpeningLeakTable onSelectDrill={onSelectDrill} openings={report.openingLeakTable} />
+      </section>
+      <section className="analysis-placeholder-panel">
+        <h3>Rapid/blitz/bullet volume over time</h3>
+        <div className="personal-volume-list">
+          {leakReport.volumeBuckets.map((bucket) => (
+            <span key={bucket.label}>
+              <strong>{bucket.label}</strong>
+              Rapid {bucket.rapid}, blitz {bucket.blitz}, bullet {bucket.bullet}
+            </span>
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function PersonalSessionRulesPanel({ report }: { report: PersonalChessReport }) {
+  const rules = report.sessionRules;
+
+  return (
+    <section className="personal-session-panel" aria-label="Session rules">
+      <div>
+        <p className="eyebrow">Session/play rules</p>
+        <h3>Rules for Blake's next rated session</h3>
+      </div>
+      <div className="personal-rule-grid">
+        <article>
+          <strong>{rules.maxRapidGames}</strong>
+          <span>max rapid games per session</span>
+        </article>
+        <article>
+          <strong>{rules.stopAfterLosses}</strong>
+          <span>stop after losses</span>
+        </article>
+        <article>
+          <strong>{rules.noBulletBeforeRapid ? "No" : "Allowed"}</strong>
+          <span>bullet before rapid</span>
+        </article>
+        <article>
+          <strong>{rules.reviewRapidLossBeforeNextRapid ? "Required" : "Optional"}</strong>
+          <span>review rapid loss before next rapid</span>
+        </article>
+      </div>
+      <p className="coach-explanation">{rules.dangerPattern}</p>
+      {report.sessionGuardrails.length > 0 ? (
+        <div className="session-guardrail-list" aria-label="Session guardrails">
+          {report.sessionGuardrails.map((guardrail) => (
+            <span key={guardrail}>{guardrail}</span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PersonalDrillCard({
+  isSelected,
+  drill,
+  onStatusChange,
+}: {
+  drill: PersonalChessReport["drillQueue"][number];
+  isSelected: boolean;
+  onStatusChange: (id: string, status: PersonalDrillStatus) => void;
+}) {
+  const [candidateMoves, setCandidateMoves] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  const bestMoveLabel = formatMoveLabel(drill.fenBefore, drill.bestMove);
+  const playedMoveLabel = formatMoveLabel(drill.fenBefore, drill.playedMoveUci, drill.playedMove);
+  const drillState = drill.dueToday ? "due" : drill.status;
+  const drillStateLabel = drill.dueToday
+    ? "Due today"
+    : drill.status === "solved"
+      ? "Solved"
+      : drill.status === "failed"
+        ? "Failed"
+        : "Needs review";
+
+  useEffect(() => {
+    setCandidateMoves("");
+    setRevealed(false);
+  }, [drill.id]);
+
+  return (
+    <article className={`personal-drill-card drill-${drillState} ${isSelected ? "selected" : ""}`}>
+      <FenBoard
+        bestMove={revealed ? drill.bestMove : undefined}
+        fen={drill.fenBefore}
+        mistakeMove={revealed ? drill.playedMoveUci : undefined}
+        orientation={drill.sideToMove}
+        playedMove={revealed ? drill.playedMoveUci : undefined}
+      />
+      <div className="personal-drill-copy">
+        <div className="card-topline">
+          <div>
+            <p className="eyebrow">Replay my mistake</p>
+            <h3>{sideLabel(drill.sideToMove)} to move before Blake's mistake</h3>
+          </div>
+          <span className="impact-pill impact-major">{leakTagLabels[drill.leakTag]}</span>
+        </div>
+        <label className="field">
+          <span>Candidate move / chosen move</span>
+          <input placeholder="Example: Nf3 or g1f3" value={candidateMoves} onChange={(event) => setCandidateMoves(event.target.value)} />
+        </label>
+        <div className="homework-action-row">
+          <button className="secondary-button primary-action" onClick={() => setRevealed((current) => !current)} type="button">
+            <Eye size={17} aria-hidden="true" />
+            {revealed ? "Hide answer" : "Reveal mistake"}
+          </button>
+          <button className="secondary-button" onClick={() => onStatusChange(drill.id, "solved")} type="button">
+            <CheckCircle2 size={17} aria-hidden="true" />
+            Solved
+          </button>
+          <button className="secondary-button" onClick={() => onStatusChange(drill.id, "failed")} type="button">
+            <Repeat2 size={17} aria-hidden="true" />
+            Failed
+          </button>
+          <button className="secondary-button" onClick={() => onStatusChange(drill.id, "needs-review")} type="button">
+            <XCircle size={17} aria-hidden="true" />
+            Needs review
+          </button>
+        </div>
+        <div className={`homework-state-pill state-${drillState}`}>
+          {drillStateLabel}
+        </div>
+        {revealed ? (
+          <dl className="move-detail-grid">
+            <div>
+              <dt>Best move</dt>
+              <dd>{bestMoveLabel}</dd>
+            </div>
+            <div>
+              <dt>Blake played</dt>
+              <dd>{playedMoveLabel}</dd>
+            </div>
+            <div>
+              <dt>Eval drop</dt>
+              <dd>{formatCentipawnLoss(drill.evalDrop)}</dd>
+            </div>
+            <div>
+              <dt>Leak tag</dt>
+              <dd>{leakTagLabels[drill.leakTag]}</dd>
+            </div>
+          </dl>
+        ) : null}
+        <dl className="move-detail-grid drill-review-grid">
+          <div>
+            <dt>Attempts</dt>
+            <dd>{drill.review.attempts}</dd>
+          </div>
+          <div>
+            <dt>Correct / incorrect</dt>
+            <dd>{drill.review.correct}/{drill.review.incorrect}</dd>
+          </div>
+          <div>
+            <dt>Last reviewed</dt>
+            <dd>{drill.review.lastReviewedDate ? formatDateLabel(drill.review.lastReviewedDate) : "Never"}</dd>
+          </div>
+          <div>
+            <dt>Next due</dt>
+            <dd>{formatDateLabel(drill.review.nextDueDate)}</dd>
+          </div>
+          <div>
+            <dt>Interval</dt>
+            <dd>{drill.review.intervalDays === 0 ? "Today" : `${drill.review.intervalDays} day(s)`}</dd>
+          </div>
+        </dl>
+        <a className="source-game-link" href={drill.gameUrl} target="_blank" rel="noreferrer">
+          Source game
+        </a>
+      </div>
+    </article>
+  );
+}
+
+function PersonalDrillBank({
+  analysisError,
+  analysisProgress,
+  analysisRunning,
+  onAnalyzeRapidLosses,
+  onDrillStatusChange,
+  onStopAnalysis,
+  report,
+  selectedDrillId,
+}: {
+  analysisError: string | null;
+  analysisProgress: SelectedDayAnalysisProgress | null;
+  analysisRunning: boolean;
+  onAnalyzeRapidLosses: () => void;
+  onDrillStatusChange: (id: string, status: PersonalDrillStatus) => void;
+  onStopAnalysis: () => void;
+  report: PersonalChessReport;
+  selectedDrillId: string | null;
+}) {
+  const progressCopy =
+    analysisProgress && analysisProgress.total > 0
+      ? `${analysisProgress.message} ${Math.min(analysisProgress.current + 1, analysisProgress.total)} / ${analysisProgress.total}`
+      : analysisProgress?.message ?? null;
+  const visibleDrills = report.dueDrillQueue.length > 0 ? report.dueDrillQueue : report.drillQueue;
+  const selectedDrill = selectedDrillId ? report.drillQueue.find((drill) => drill.id === selectedDrillId) : null;
+  const orderedVisibleDrills = selectedDrill
+    ? [selectedDrill, ...visibleDrills.filter((drill) => drill.id !== selectedDrill.id)]
+    : visibleDrills;
+
+  return (
+    <section className="personal-drill-bank" aria-label="Personal drill bank">
+      <div className="card-topline">
+        <div>
+          <p className="eyebrow">Personal drill bank</p>
+          <h3>Drills from Blake's games</h3>
+        </div>
+        <div className="homework-action-row">
+          <button className="secondary-button primary-action" disabled={analysisRunning} onClick={onAnalyzeRapidLosses} type="button">
+            <Brain size={17} aria-hidden="true" />
+            Analyze recent rapid losses
+          </button>
+          <button className="secondary-button" disabled={!analysisRunning} onClick={onStopAnalysis} type="button">
+            Stop
+          </button>
+        </div>
+      </div>
+      <div className="personal-sync-meta">
+        <span>Stockfish: {analysisError ? "skipped/unavailable" : report.drillQueue.length > 0 ? "saved drills available" : "optional"}</span>
+        <span>Due today: {report.dueDrillCount}</span>
+        <span>Saved drills: {report.drillQueue.length}</span>
+      </div>
+      {progressCopy ? <p className="helper-text" role="status">{progressCopy}</p> : null}
+      {analysisError ? <p className="error-text">Stockfish analysis unavailable. {analysisError}</p> : null}
+      {report.drillQueue.length === 0 ? (
+        <section className="analysis-placeholder-panel">
+          <h3>Personal drill queue</h3>
+          <p className="helper-text">No saved FEN drills yet. Metadata reports still work without Stockfish.</p>
+        </section>
+      ) : (
+        <>
+          <section className={`due-repair-panel ${report.dueDrillCount > 0 ? "has-due" : ""}`}>
+            <strong>{report.dueDrillCount > 0 ? "Due-today repair queue" : "No drills due today"}</strong>
+            <span>
+              {report.dueDrillCount > 0
+                ? "Finish these replay cards before rated rapid."
+                : "The next saved drill appears when its review date arrives."}
+            </span>
+          </section>
+          <div className="personal-drill-list">
+            {orderedVisibleDrills.slice(0, 6).map((drill) => (
+              <PersonalDrillCard
+                drill={drill}
+                isSelected={selectedDrillId === drill.id}
+                key={drill.id}
+                onStatusChange={onDrillStatusChange}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function PersonalTrainerPanel({
+  analysisError,
+  analysisProgress,
+  analysisRunning,
+  games,
+  importResult,
+  loading,
+  meta,
+  onAnalyzeRapidLosses,
+  onSelectDrill,
+  onDrillStatusChange,
+  onStopAnalysis,
+  onSync,
+  onUsernameChange,
+  progress,
+  report,
+  selectedDrillId,
+  syncError,
+  username,
+}: {
+  analysisError: string | null;
+  analysisProgress: SelectedDayAnalysisProgress | null;
+  analysisRunning: boolean;
+  games: PersonalChessGame[];
+  importResult: PersonalChessImportResult | null;
+  loading: boolean;
+  meta: PersonalChessSyncMeta | null;
+  onAnalyzeRapidLosses: () => void;
+  onSelectDrill: (drillId: string) => void;
+  onDrillStatusChange: (id: string, status: PersonalDrillStatus) => void;
+  onStopAnalysis: () => void;
+  onSync: (scope: PersonalChessSyncScope) => void;
+  onUsernameChange: (username: string) => void;
+  progress: PersonalChessSyncProgress | null;
+  report: PersonalChessReport;
+  selectedDrillId: string | null;
+  syncError: string | null;
+  username: string;
+}) {
+  return (
+    <section className="personal-trainer-panel" aria-label="Blake personal chess trainer">
+      <PersonalSyncPanel
+        importResult={importResult}
+        loading={loading}
+        meta={meta}
+        onSync={onSync}
+        onUsernameChange={onUsernameChange}
+        progress={progress}
+        syncError={syncError}
+        username={username}
+      />
+      {games.length === 0 ? (
+        <section className="analysis-placeholder-panel">
+          <h3>No imported games</h3>
+          <p className="helper-text">The dashboard will populate after the first Chess.com sync.</p>
+        </section>
+      ) : null}
+      <PersonalDashboardSection report={report} />
+      <PersonalLeakReportSection onSelectDrill={onSelectDrill} report={report} />
+      <PersonalSessionRulesPanel report={report} />
+      <PersonalDrillBank
+        analysisError={analysisError}
+        analysisProgress={analysisProgress}
+        analysisRunning={analysisRunning}
+        onAnalyzeRapidLosses={onAnalyzeRapidLosses}
+        onDrillStatusChange={onDrillStatusChange}
+        onStopAnalysis={onStopAnalysis}
+        report={report}
+        selectedDrillId={selectedDrillId}
+      />
+    </section>
   );
 }
 
@@ -2365,10 +3060,24 @@ function SelectedDayReview({
 }
 
 export function ChessComAnalysisPanel() {
-  const [username, setUsername] = useState(() => readLastChessComUsername());
+  const [username, setUsername] = useState(() => readConfiguredChessComUsername() || readLastChessComUsername());
   const [monthCount, setMonthCount] = useState(3);
   const [ratedOnly, setRatedOnly] = useState(true);
   const [games, setGames] = useState<NormalizedChessGame[]>([]);
+  const [personalGames, setPersonalGames] = useState<PersonalChessGame[]>([]);
+  const [personalMistakes, setPersonalMistakes] = useState<PersonalChessMistake[]>([]);
+  const [personalDrillReviews, setPersonalDrillReviews] = useState<Record<string, PersonalDrillReview>>(() =>
+    readPersonalDrillReviews(),
+  );
+  const [selectedPersonalDrillId, setSelectedPersonalDrillId] = useState<string | null>(null);
+  const [personalSyncMeta, setPersonalSyncMeta] = useState<PersonalChessSyncMeta | null>(() => readPersonalChessSyncMeta());
+  const [personalImportResult, setPersonalImportResult] = useState<PersonalChessImportResult | null>(null);
+  const [personalSyncProgress, setPersonalSyncProgress] = useState<PersonalChessSyncProgress | null>(null);
+  const [personalSyncLoading, setPersonalSyncLoading] = useState(false);
+  const [personalSyncError, setPersonalSyncError] = useState<string | null>(null);
+  const [personalAnalysisProgress, setPersonalAnalysisProgress] = useState<SelectedDayAnalysisProgress | null>(null);
+  const [personalAnalysisRunning, setPersonalAnalysisRunning] = useState(false);
+  const [personalAnalysisError, setPersonalAnalysisError] = useState<string | null>(null);
   const [selectedTimeClass, setSelectedTimeClass] = useState<ChessComTrackedTimeClass>("blitz");
   const [playerLevel, setPlayerLevel] = useState<PlayerLevel>("intermediate");
   const [showEngineDetails, setShowEngineDetails] = useState(false);
@@ -2380,8 +3089,10 @@ export function ChessComAnalysisPanel() {
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
   const [analysisRevision, setAnalysisRevision] = useState(0);
   const [analysisSettings, setAnalysisSettings] = useState<SelectedDayAnalysisSettings>(defaultSelectedDayAnalysisSettings);
-  const [activeView, setActiveView] = useState<AnalysisView>("analysis");
+  const [activeView, setActiveView] = useState<AnalysisView>("personal");
   const [selectedAnalysisReport, setSelectedAnalysisReport] = useState<DailyEngineAnalysisReport | null>(null);
+  const personalEngineRef = useRef<ChessStockfishEngine | null>(null);
+  const personalAbortControllerRef = useRef<AbortController | null>(null);
 
   const filteredGames = useMemo(
     () => games.filter((game) => game.timeClass === selectedTimeClass),
@@ -2449,6 +3160,15 @@ export function ChessComAnalysisPanel() {
     );
   }, [analysisRevision, analysisSettings, loadedUsername, selectedDay]);
   const activeReviewReport = selectedAnalysisReport ?? cachedSelectedDayReport;
+  const personalReport = useMemo(
+    () =>
+      buildPersonalChessReport({
+        drillReviews: personalDrillReviews,
+        games: personalGames,
+        mistakes: personalMistakes,
+      }),
+    [personalDrillReviews, personalGames, personalMistakes],
+  );
 
   const bumpAnalysisRevision = useCallback(() => {
     setAnalysisRevision((revision) => revision + 1);
@@ -2473,6 +3193,28 @@ export function ChessComAnalysisPanel() {
     [],
   );
 
+  const refreshPersonalData = useCallback(async () => {
+    const [storedGames, storedMistakes] = await Promise.all([
+      readPersonalChessGames(),
+      readPersonalChessMistakes(),
+    ]);
+    const storedMeta = readPersonalChessSyncMeta();
+    setPersonalGames(storedGames);
+    setPersonalMistakes(storedMistakes);
+    setPersonalSyncMeta(storedMeta);
+
+    if (storedGames.length > 0) {
+      const normalizedGames = personalGamesToNormalized(storedGames);
+      setGames(normalizedGames);
+      setLoadedUsername(storedMeta?.username ?? username.trim());
+      setSelectedDate(
+        normalizedGames.filter((game) => game.timeClass === selectedTimeClass).at(-1)?.endDate ??
+          normalizedGames.at(-1)?.endDate ??
+          null,
+      );
+    }
+  }, [selectedTimeClass, username]);
+
   useEffect(() => {
     if (!selectedDate && summaries.length > 0) {
       setSelectedDate(summaries[0].date);
@@ -2486,6 +3228,17 @@ export function ChessComAnalysisPanel() {
   }, [analysisSettings, selectedDate, selectedTimeClass]);
 
   useEffect(() => {
+    void refreshPersonalData();
+  }, [refreshPersonalData]);
+
+  useEffect(() => {
+    return () => {
+      personalAbortControllerRef.current?.abort();
+      personalEngineRef.current?.dispose();
+    };
+  }, []);
+
+  useEffect(() => {
     const mostRecentWeek = getMostRecentWeek(summaries);
     if (!mostRecentWeek) {
       setSelectedWeek(null);
@@ -2495,13 +3248,155 @@ export function ChessComAnalysisPanel() {
     setSelectedWeek((currentWeek) => currentWeek && availableWeeks.includes(currentWeek) ? currentWeek : mostRecentWeek);
   }, [availableWeeks, summaries]);
 
+  function updateUsername(nextUsername: string) {
+    setUsername(nextUsername);
+    saveConfiguredChessComUsername(nextUsername);
+  }
+
+  async function syncPersonalGames(scope: PersonalChessSyncScope) {
+    const trimmedUsername = username.trim() || blakeChessTrainerConfig.defaultUsername;
+    if (!trimmedUsername) {
+      setPersonalSyncError("Enter Blake's Chess.com username.");
+      return;
+    }
+    setUsername(trimmedUsername);
+
+    setPersonalSyncLoading(true);
+    setPersonalSyncError(null);
+    setPersonalSyncProgress({ current: 0, message: "Starting Chess.com sync.", total: 0 });
+    setPersonalImportResult(null);
+
+    try {
+      saveConfiguredChessComUsername(trimmedUsername);
+      saveLastChessComUsername(trimmedUsername);
+      const response = await fetchPersonalChessComHistory({
+        onProgress: setPersonalSyncProgress,
+        scope,
+        username: trimmedUsername,
+      });
+      const importResult = await importPersonalChessGames(response.games);
+      const storedGames = await readPersonalChessGames();
+      const storedMistakes = await readPersonalChessMistakes();
+      const normalizedStoredGames = personalGamesToNormalized(storedGames);
+      const syncMeta: PersonalChessSyncMeta = {
+        archiveUrls: response.archiveUrls,
+        importedGameCount: storedGames.length,
+        lastError: null,
+        lastSyncedAt: new Date().toISOString(),
+        username: trimmedUsername,
+      };
+
+      writePersonalChessSyncMeta(syncMeta);
+      setPersonalGames(storedGames);
+      setPersonalMistakes(storedMistakes);
+      setPersonalSyncMeta(syncMeta);
+      setPersonalImportResult(importResult);
+      setGames(normalizedStoredGames);
+      setArchiveCount(response.archiveUrls.length);
+      setLoadedUsername(trimmedUsername);
+      setSelectedDate(
+        normalizedStoredGames.filter((game) => game.timeClass === selectedTimeClass).at(-1)?.endDate ??
+          normalizedStoredGames.at(-1)?.endDate ??
+          null,
+      );
+      setAnalysisRevision((revision) => revision + 1);
+      setSelectedAnalysisReport(null);
+      setActiveView("personal");
+      setPersonalSyncProgress({
+        current: response.archiveUrls.length,
+        message: `Imported ${importResult.importedCount} game(s); ${importResult.duplicateCount} duplicate(s) skipped.`,
+        total: response.archiveUrls.length,
+      });
+    } catch (syncError) {
+      const reason =
+        syncError instanceof Error
+          ? `${syncError.message}. Metadata reports keep working from already imported games.`
+          : "Could not sync Chess.com games.";
+      const nextMeta: PersonalChessSyncMeta = {
+        archiveUrls: personalSyncMeta?.archiveUrls ?? [],
+        importedGameCount: personalGames.length,
+        lastError: reason,
+        lastSyncedAt: personalSyncMeta?.lastSyncedAt ?? null,
+        username: trimmedUsername,
+      };
+      writePersonalChessSyncMeta(nextMeta);
+      setPersonalSyncMeta(nextMeta);
+      setPersonalSyncError(reason);
+    } finally {
+      setPersonalSyncLoading(false);
+    }
+  }
+
+  async function analyzePersonalRapidLosses() {
+    if (personalGames.length === 0) {
+      setPersonalAnalysisError("Sync games before running rapid-loss analysis.");
+      return;
+    }
+
+    const abortController = new AbortController();
+    personalAbortControllerRef.current = abortController;
+    personalEngineRef.current?.dispose();
+    personalEngineRef.current = createStockfishEngine();
+    setPersonalAnalysisError(null);
+    setPersonalAnalysisRunning(true);
+    setPersonalAnalysisProgress({ current: 0, message: "Preparing recent rapid losses.", total: 0 });
+
+    try {
+      const report = await analyzeRecentRapidLosses({
+        engine: personalEngineRef.current,
+        games: personalGames,
+        onProgress: setPersonalAnalysisProgress,
+        settings: {
+          depth: analysisSettings.depth,
+          maxMoves: Math.max(analysisSettings.maxMoves, 36),
+          moveTimeMs: analysisSettings.moveTimeMs,
+        },
+        signal: abortController.signal,
+      });
+
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      await replacePersonalChessMistakes(report.mistakes);
+      setPersonalMistakes(report.mistakes);
+      setAnalysisRevision((revision) => revision + 1);
+      if (report.mistakes.length === 0 && report.skippedGames.length > 0) {
+        setPersonalAnalysisError(report.skippedGames[0].reason);
+      }
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        setPersonalAnalysisError(error instanceof Error ? error.message : "Engine analysis unavailable in this browser/build.");
+      }
+    } finally {
+      setPersonalAnalysisRunning(false);
+    }
+  }
+
+  function stopPersonalAnalysis() {
+    personalAbortControllerRef.current?.abort();
+    personalEngineRef.current?.stop();
+    setPersonalAnalysisRunning(false);
+    setPersonalAnalysisProgress((currentProgress) => ({
+      current: currentProgress?.current ?? 0,
+      message: "Rapid-loss analysis stopped.",
+      total: currentProgress?.total ?? 0,
+    }));
+  }
+
+  function updatePersonalDrillStatus(id: string, status: PersonalDrillStatus) {
+    setPersonalDrillReviews(writePersonalDrillReview(id, status));
+    setSelectedPersonalDrillId(id);
+  }
+
   async function loadGames(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
-    const trimmedUsername = username.trim();
+    const trimmedUsername = username.trim() || blakeChessTrainerConfig.defaultUsername;
     if (!trimmedUsername) {
       setError("Enter a Chess.com username.");
       return;
     }
+    setUsername(trimmedUsername);
 
     setLoading(true);
     setError(null);
@@ -2511,13 +3406,28 @@ export function ChessComAnalysisPanel() {
         username: trimmedUsername,
       });
       const normalizedGames = normalizeChessComGames(response.games, trimmedUsername, { ratedOnly });
+      const personalImport = await importPersonalChessGames(normalizePersonalChessComGames(response.games, trimmedUsername));
+      const storedPersonalGames = await readPersonalChessGames();
+      const syncMeta: PersonalChessSyncMeta = {
+        archiveUrls: response.archiveUrls,
+        importedGameCount: storedPersonalGames.length,
+        lastError: null,
+        lastSyncedAt: new Date().toISOString(),
+        username: trimmedUsername,
+      };
+      writePersonalChessSyncMeta(syncMeta);
+      saveConfiguredChessComUsername(trimmedUsername);
+      setPersonalGames(storedPersonalGames);
+      setPersonalMistakes(await readPersonalChessMistakes());
+      setPersonalSyncMeta(syncMeta);
+      setPersonalImportResult(personalImport);
       setArchiveCount(response.archiveUrls.length);
       setGames(normalizedGames);
       setLoadedUsername(trimmedUsername);
       setSelectedDate(normalizedGames.filter((game) => game.timeClass === selectedTimeClass).at(-1)?.endDate ?? normalizedGames.at(-1)?.endDate ?? null);
       setAnalysisRevision((revision) => revision + 1);
       setSelectedAnalysisReport(null);
-      setActiveView("analysis");
+      setActiveView("personal");
       saveLastChessComUsername(trimmedUsername);
     } catch (fetchError) {
       setGames([]);
@@ -2535,13 +3445,13 @@ export function ChessComAnalysisPanel() {
   }
 
   return (
-    <section className="chess-analysis-panel" aria-label="Chess.com Analysis">
+    <section className="chess-analysis-panel" aria-label="Blake chess trainer">
       <div className="chess-analysis-header">
         <div>
-          <p className="eyebrow">Chess.com Analysis</p>
-          <h2>Coach review surface</h2>
+          <p className="eyebrow">Blake chess trainer</p>
+          <h2>Personal leak repair surface</h2>
           <p className="helper-text">
-            Loads public Chess.com games in the browser, then guides review by player level.
+            Import games, diagnose leaks, build drills, and set rules for the next rated session.
           </p>
         </div>
         {loadedUsername ? <span className="status-tag">Loaded {loadedUsername}</span> : null}
@@ -2551,9 +3461,9 @@ export function ChessComAnalysisPanel() {
           <span>Chess.com username</span>
           <input
             autoComplete="off"
-            placeholder="e.g. hikaru"
+            placeholder={blakeChessTrainerConfig.defaultUsername}
             value={username}
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => updateUsername(event.target.value)}
           />
         </label>
         <label className="field">
@@ -2575,15 +3485,18 @@ export function ChessComAnalysisPanel() {
       </form>
       {error ? <p className="error-text">{error}</p> : null}
       {loading ? <p className="helper-text">Fetching Chess.com archive URLs and recent games sequentially to avoid aggressive API traffic.</p> : null}
-      {!loading && !error && games.length === 0 ? (
-        <p className="helper-text">Enter a username to load recent public rated blitz and rapid games.</p>
+      {!loading && !error && personalGames.length === 0 ? (
+        <p className="helper-text">Sync {blakeChessTrainerConfig.defaultUsername}'s Chess.com games to populate the personal dashboard.</p>
       ) : null}
-      {!loading && games.length > 0 ? (
-        <>
+      {personalGames.length > 0 || games.length > 0 ? (
           <div className="chess-analysis-loaded-note">
-            <span>{filteredGames.length} rated {selectedTimeClass} games</span>
-            <span>{archiveCount} monthly archives checked</span>
+            <span>{personalGames.length} imported personal games</span>
+            <span>{filteredGames.length} {selectedTimeClass} games in review scope</span>
+            <span>{archiveCount} monthly archives checked this run</span>
           </div>
+      ) : null}
+      {games.length > 0 ? (
+        <>
           <div className="coach-mode-panel" aria-label="Player review mode">
             <div>
               <p className="eyebrow">Review mode</p>
@@ -2641,102 +3554,130 @@ export function ChessComAnalysisPanel() {
             selectedTimeClass={selectedTimeClass}
             weeklyReport={weeklyReport}
           />
-          <AnalysisViewNav activeView={activeView} onChange={setActiveView} playerLevel={playerLevel} />
-          <div className="analysis-view-panel">
-            {filteredGames.length === 0 ? (
-              <section className="analysis-placeholder-panel">
-                <h3>No {timeControlLabel(selectedTimeClass)} games found</h3>
-                <p className="helper-text">
-                  No loaded games match this time control and rated-only setting. Try another time control, include unrated games, or load more archives.
-                </p>
-              </section>
-            ) : null}
-            {activeView === "rating" && filteredGames.length > 0 ? (
-              <section aria-label="Rating summaries">
-                <div className="analysis-section-heading">
-                  <p className="eyebrow">Rating</p>
-                  <h3>{timeControlLabel(selectedTimeClass)} trend and daily cards</h3>
-                </div>
-                <RatingChangeGraph days={summaries} />
-                <div className="chess-analysis-days">
-                  {summaries.map((summary) => (
-                    <DaySummaryButton
-                      day={summary}
-                      isSelected={selectedDay?.date === summary.date}
-                      key={summary.date}
-                      onSelect={() => setSelectedDate(summary.date)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ) : null}
-            {activeView === "analysis" && selectedDay ? (
-              <SelectedDayReview
-                analysisReport={activeReviewReport}
-                analysisSettings={analysisSettings}
-                day={selectedDay}
-                days={summaries}
-                onAnalysisSettingsChange={setAnalysisSettings}
-                onAnalysisReport={handleAnalysisReport}
-                onAnalysisStatusChange={bumpAnalysisRevision}
-                onDateChange={setSelectedDate}
-                onUseAnalysisInWeeklyReport={handleUseAnalysisInWeeklyReport}
-                onViewChange={setActiveView}
-                playerLevel={playerLevel}
-                showEngineDetails={showEngineDetails}
-                username={loadedUsername}
-              />
-            ) : null}
-            {activeView === "analysis" && filteredGames.length > 0 && !selectedDay ? (
-              <section className="analysis-placeholder-panel">
-                <h3>No selected day</h3>
-                <p className="helper-text">Choose a day from Rating, or reload games so the app can select the most recent active day.</p>
-              </section>
-            ) : null}
-            {activeView === "critical" ? (
-              <CriticalMovesSection
-                analysisSettings={analysisSettings}
-                moves={activeReviewReport?.criticalMoves ?? []}
-                playerLevel={playerLevel}
-                showEngineDetails={showEngineDetails}
-              />
-            ) : null}
-            {activeView === "homework" ? (
-              <HomeworkSection
-                analysisSettings={analysisSettings}
-                playerLevel={playerLevel}
-                puzzles={activeReviewReport?.homeworkPuzzles ?? []}
-                showEngineDetails={showEngineDetails}
-              />
-            ) : null}
-            {activeView === "weekly" && weeklyReport ? (
-              <WeeklyReportPanel
-                analysisSettings={analysisSettings}
-                onAnalysisReport={handleAnalysisReport}
-                onCoverageChange={bumpAnalysisRevision}
-                selectedTimeClass={selectedTimeClass}
-                onSelectDay={(date) => {
-                  setSelectedDate(date);
-                  setActiveView("analysis");
-                }}
-                playerLevel={playerLevel}
-                report={weeklyReport}
-                selectedWeek={selectedWeek ?? weeklyReport.weekKey}
-                setSelectedWeek={setSelectedWeek}
-                showEngineDetails={showEngineDetails}
-                username={loadedUsername}
-                weeks={availableWeeks}
-              />
-            ) : null}
-            {activeView === "weekly" && !weeklyReport ? (
-              <section className="analysis-placeholder-panel">
-                <h3>No weekly plan yet</h3>
-                <p className="helper-text">Load games with at least one active day for the selected time control, then the weekly plan can show coverage.</p>
-              </section>
-            ) : null}
-          </div>
         </>
       ) : null}
+      <AnalysisViewNav activeView={activeView} onChange={setActiveView} playerLevel={playerLevel} />
+      <div className="analysis-view-panel">
+        {activeView === "personal" ? (
+          <PersonalTrainerPanel
+            analysisError={personalAnalysisError}
+            analysisProgress={personalAnalysisProgress}
+            analysisRunning={personalAnalysisRunning}
+            games={personalGames}
+            importResult={personalImportResult}
+            loading={personalSyncLoading}
+            meta={personalSyncMeta}
+            onAnalyzeRapidLosses={analyzePersonalRapidLosses}
+            onSelectDrill={(drillId) => setSelectedPersonalDrillId(drillId)}
+            onDrillStatusChange={updatePersonalDrillStatus}
+            onStopAnalysis={stopPersonalAnalysis}
+            onSync={syncPersonalGames}
+            onUsernameChange={updateUsername}
+            progress={personalSyncProgress}
+            report={personalReport}
+            selectedDrillId={selectedPersonalDrillId}
+            syncError={personalSyncError}
+            username={username}
+          />
+        ) : null}
+        {activeView !== "personal" && games.length === 0 ? (
+          <section className="analysis-placeholder-panel">
+            <h3>No review games loaded</h3>
+            <p className="helper-text">Use the Dashboard sync first, or run the recent archive loader above.</p>
+          </section>
+        ) : null}
+        {activeView !== "personal" && games.length > 0 && filteredGames.length === 0 ? (
+          <section className="analysis-placeholder-panel">
+            <h3>No {timeControlLabel(selectedTimeClass)} games found</h3>
+            <p className="helper-text">
+              No loaded games match this time control and rated-only setting. Try another time control, include unrated games, or load more archives.
+            </p>
+          </section>
+        ) : null}
+        {activeView === "rating" && filteredGames.length > 0 ? (
+          <section aria-label="Rating summaries">
+            <div className="analysis-section-heading">
+              <p className="eyebrow">Rating</p>
+              <h3>{timeControlLabel(selectedTimeClass)} trend and daily cards</h3>
+            </div>
+            <RatingChangeGraph days={summaries} />
+            <div className="chess-analysis-days">
+              {summaries.map((summary) => (
+                <DaySummaryButton
+                  day={summary}
+                  isSelected={selectedDay?.date === summary.date}
+                  key={summary.date}
+                  onSelect={() => setSelectedDate(summary.date)}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+        {activeView === "analysis" && selectedDay ? (
+          <SelectedDayReview
+            analysisReport={activeReviewReport}
+            analysisSettings={analysisSettings}
+            day={selectedDay}
+            days={summaries}
+            onAnalysisSettingsChange={setAnalysisSettings}
+            onAnalysisReport={handleAnalysisReport}
+            onAnalysisStatusChange={bumpAnalysisRevision}
+            onDateChange={setSelectedDate}
+            onUseAnalysisInWeeklyReport={handleUseAnalysisInWeeklyReport}
+            onViewChange={setActiveView}
+            playerLevel={playerLevel}
+            showEngineDetails={showEngineDetails}
+            username={loadedUsername}
+          />
+        ) : null}
+        {activeView === "analysis" && filteredGames.length > 0 && !selectedDay ? (
+          <section className="analysis-placeholder-panel">
+            <h3>No selected day</h3>
+            <p className="helper-text">Choose a day from Rating, or reload games so the app can select the most recent active day.</p>
+          </section>
+        ) : null}
+        {activeView === "critical" ? (
+          <CriticalMovesSection
+            analysisSettings={analysisSettings}
+            moves={activeReviewReport?.criticalMoves ?? []}
+            playerLevel={playerLevel}
+            showEngineDetails={showEngineDetails}
+          />
+        ) : null}
+        {activeView === "homework" ? (
+          <HomeworkSection
+            analysisSettings={analysisSettings}
+            playerLevel={playerLevel}
+            puzzles={activeReviewReport?.homeworkPuzzles ?? []}
+            showEngineDetails={showEngineDetails}
+          />
+        ) : null}
+        {activeView === "weekly" && weeklyReport ? (
+          <WeeklyReportPanel
+            analysisSettings={analysisSettings}
+            onAnalysisReport={handleAnalysisReport}
+            onCoverageChange={bumpAnalysisRevision}
+            selectedTimeClass={selectedTimeClass}
+            onSelectDay={(date) => {
+              setSelectedDate(date);
+              setActiveView("analysis");
+            }}
+            playerLevel={playerLevel}
+            report={weeklyReport}
+            selectedWeek={selectedWeek ?? weeklyReport.weekKey}
+            setSelectedWeek={setSelectedWeek}
+            showEngineDetails={showEngineDetails}
+            username={loadedUsername}
+            weeks={availableWeeks}
+          />
+        ) : null}
+        {activeView === "weekly" && !weeklyReport ? (
+          <section className="analysis-placeholder-panel">
+            <h3>No weekly plan yet</h3>
+            <p className="helper-text">Load games with at least one active day for the selected time control, then the weekly plan can show coverage.</p>
+          </section>
+        ) : null}
+      </div>
     </section>
   );
 }
