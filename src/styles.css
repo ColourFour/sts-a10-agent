@@ -3855,6 +3855,7 @@ h3 {
 }
 
 .fen-board-wrap {
+  container-type: inline-size;
   width: min(220px, 100%);
 }
 
@@ -3869,9 +3870,10 @@ h3 {
   width: 100%;
   aspect-ratio: 1;
   overflow: hidden;
-  border: 2px solid rgba(216, 231, 246, 0.7);
+  border: 8px solid #23231f;
   border-radius: 8px;
-  background: #d8e7f6;
+  background: #eef1f4;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
 }
 
 .fen-board.interactive .fen-square {
@@ -3896,10 +3898,14 @@ h3 {
   min-width: 0;
   min-height: 0;
   padding: 0;
-  color: #161c21;
-  font-size: clamp(1.05rem, 3vw, 2rem);
+  color: #050607;
+  font-family: Georgia, "Times New Roman", "DejaVu Serif", serif;
+  font-size: clamp(1.35rem, 11cqw, 3.2rem);
   font-weight: 900;
   line-height: 1;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 1px rgba(0, 0, 0, 0.65);
 }
 
 .fen-square.selected {
@@ -3920,11 +3926,11 @@ h3 {
 }
 
 .fen-square.light {
-  background: #e9f2fb;
+  background: #eef1f4;
 }
 
 .fen-square.dark {
-  background: #6f9dcc;
+  background: #5a98e8;
 }
 
 .fen-square.played::after,
@@ -3955,13 +3961,7 @@ h3 {
 
 .fen-file-label,
 .fen-rank-label {
-  position: absolute;
-  z-index: 2;
-  color: rgba(9, 22, 38, 0.78);
-  font-size: 0.58rem;
-  font-weight: 950;
-  line-height: 1;
-  text-transform: uppercase;
+  display: none;
 }
 
 .fen-file-label {
