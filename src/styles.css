@@ -1505,21 +1505,31 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 8px;
+  width: min(100%, 540px);
+  touch-action: none;
 }
 
 .arcade-touch-controls button {
-  min-height: 42px;
+  min-height: 48px;
   border: 1px solid rgba(232, 220, 200, 0.2);
   border-radius: 7px;
   color: var(--text);
   background: #292d33;
   font-weight: 850;
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.arcade-touch-controls button:hover {
+.arcade-touch-controls button:hover,
+.arcade-touch-controls button:active {
   border-color: rgba(240, 198, 111, 0.48);
   filter: brightness(1.08);
+}
+
+.super-touch-controls {
+  grid-template-columns: repeat(2, minmax(96px, 1fr));
 }
 
 .lights-cell {
@@ -2353,6 +2363,221 @@ h3 {
   background: rgba(0, 0, 0, 0.14);
   font-size: 0.78rem;
   font-weight: 850;
+}
+
+.latest-game-review-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(118, 166, 230, 0.32);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(118, 166, 230, 0.1), rgba(47, 182, 118, 0.055)),
+    rgba(10, 13, 17, 0.46);
+}
+
+.latest-review-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.latest-review-header h3 {
+  font-size: 1.18rem;
+}
+
+.latest-review-meta,
+.latest-review-actions,
+.latest-review-grade-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.latest-review-meta span,
+.latest-review-actions > span {
+  padding: 6px 8px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.14);
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.latest-review-actions {
+  justify-content: flex-end;
+}
+
+.latest-review-actions .secondary-button {
+  gap: 6px;
+}
+
+.move-grade-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(232, 220, 200, 0.16);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.move-grade-pill.grade-best,
+.latest-review-move-tab.grade-best {
+  border-color: rgba(118, 166, 230, 0.55);
+  color: #dcecff;
+  background: rgba(76, 142, 221, 0.2);
+}
+
+.move-grade-pill.grade-good,
+.latest-review-move-tab.grade-good {
+  border-color: rgba(86, 220, 145, 0.48);
+  color: #a8ffcf;
+  background: rgba(47, 182, 118, 0.15);
+}
+
+.move-grade-pill.grade-neutral,
+.latest-review-move-tab.grade-neutral {
+  border-color: rgba(198, 205, 214, 0.28);
+  color: #d6dce5;
+  background: rgba(255, 255, 255, 0.065);
+}
+
+.move-grade-pill.grade-mistake,
+.latest-review-move-tab.grade-mistake {
+  border-color: rgba(255, 140, 126, 0.46);
+  color: #ffc4bc;
+  background: rgba(217, 92, 80, 0.16);
+}
+
+.move-grade-pill.grade-blunder,
+.latest-review-move-tab.grade-blunder {
+  border-color: rgba(128, 32, 54, 0.76);
+  color: #ffd5dc;
+  background: rgba(91, 18, 37, 0.72);
+}
+
+.latest-review-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 420px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+.latest-review-board-column,
+.latest-review-copy,
+.latest-review-lines {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.latest-review-copy h3 {
+  font-size: 1.28rem;
+}
+
+.latest-review-detail-grid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+
+.latest-review-lines {
+  padding: 10px;
+  border: 1px solid rgba(232, 220, 200, 0.13);
+  border-radius: 8px;
+  background: rgba(10, 13, 17, 0.38);
+}
+
+.latest-review-lines h4 {
+  margin: 0;
+  color: #f2cc7c;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.latest-review-lines ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.latest-review-lines li {
+  min-width: 0;
+  color: var(--muted);
+  line-height: 1.34;
+}
+
+.latest-review-lines strong {
+  color: var(--text);
+}
+
+.latest-review-lines span {
+  margin-left: 8px;
+  color: #a8ffcf;
+  font-weight: 950;
+}
+
+.latest-review-lines small {
+  display: block;
+  min-width: 0;
+  margin-top: 2px;
+  color: var(--subtle);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.latest-review-move-strip {
+  display: flex;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 0;
+  overflow-x: auto;
+}
+
+.latest-review-move-tab {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 38px;
+  max-width: 98px;
+  padding: 6px 8px;
+  border: 1px solid rgba(232, 220, 200, 0.14);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+}
+
+.latest-review-move-tab.selected {
+  box-shadow: 0 0 0 3px rgba(240, 198, 111, 0.16);
+}
+
+.latest-review-move-tab strong {
+  color: currentColor;
+  font-size: 0.72rem;
+}
+
+.latest-review-move-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .personal-trainer-panel,
@@ -3886,10 +4111,15 @@ h3 {
 }
 
 @media (max-width: 860px) {
+  .latest-review-header,
   .weekly-report-header,
   .chess-analysis-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .latest-review-actions {
+    justify-content: flex-start;
   }
 
   .weekly-analysis-status-row {
@@ -3903,6 +4133,7 @@ h3 {
   .critical-move-list li,
   .homework-puzzle-list li,
   .focused-review-card,
+  .latest-review-layout,
   .personal-drill-card,
   .personal-focus-panel {
     grid-template-columns: 1fr;
@@ -4755,7 +4986,8 @@ h3 {
   }
 
   .analysis-results-grid,
-  .focused-review-card {
+  .focused-review-card,
+  .latest-review-layout {
     grid-template-columns: 1fr;
   }
 
@@ -4784,6 +5016,7 @@ h3 {
 
   .chess-analysis-header,
   .chess-game-row,
+  .latest-review-header,
   .weekly-report-header {
     align-items: stretch;
     flex-direction: column;

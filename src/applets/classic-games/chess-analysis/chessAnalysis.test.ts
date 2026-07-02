@@ -2,12 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ChessComApiGame } from "./chessComApi";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
+import { classifyLatestGameMoveGrade } from "./chessLatestGameReview";
 import { blakeChessTrainerConfig } from "./chessPersonalConfig";
 import { buildPersonalChessReport, classifyPersonalLeakTag } from "./chessPersonalInsights";
 import { normalizePersonalChessComGames } from "./chessPersonalImport";
 import { importPersonalChessGames, readPersonalChessGames, schedulePersonalDrillReview } from "./chessPersonalStore";
 import type { PersonalChessMistake } from "./chessPersonalTypes";
-import { extractPlayerMovePositions } from "./chessPgnPositionExtraction";
+import { extractGameMovePositions, extractPlayerMovePositions } from "./chessPgnPositionExtraction";
 import {
   buildAnalysisCacheKey,
   buildDayAnalysisCacheKey,
@@ -465,9 +466,75 @@ describe("PGN position extraction", () => {
     });
     expect(positions[1].fenAfter).toContain(" b ");
   });
+
+  it("extracts every game ply and marks player versus opponent moves", () => {
+    const normalizedGame: NormalizedChessGame = {
+      endDate: "2026-06-02",
+      endTimestamp: dayOneMorning,
+      gameUrl: "https://www.chess.com/game/live/6",
+      opponentRating: 1500,
+      opponentUsername: "Opponent",
+      pgn: '[Event "Rated Blitz"]\n\n1. e4 e5 2. Nf3 Nc6 *',
+      playerColor: "black",
+      playerRatingAfterGame: 1510,
+      rated: true,
+      result: "draw",
+      timeClass: "blitz",
+    };
+
+    const positions = extractGameMovePositions(normalizedGame);
+
+    expect(positions).toHaveLength(4);
+    expect(positions.map((position) => position.playedMove)).toEqual(["e4", "e5", "Nf3", "Nc6"]);
+    expect(positions.map((position) => position.isPlayerMove)).toEqual([false, true, false, true]);
+    expect(positions[1]).toMatchObject({
+      moveNumber: 1,
+      playedMoveUci: "e7e5",
+      ply: 2,
+      sideToMove: "black",
+    });
+  });
 });
 
 describe("selected-day analysis helpers", () => {
+  it("classifies latest-game move grades into five review buckets", () => {
+    expect(
+      classifyLatestGameMoveGrade({
+        bestMove: "e2e4",
+        centipawnLoss: 240,
+        playedMoveUci: "e2e4",
+      }),
+    ).toBe("best");
+    expect(
+      classifyLatestGameMoveGrade({
+        bestMove: "g1f3",
+        centipawnLoss: 55,
+        playedMoveUci: "d2d4",
+      }),
+    ).toBe("good");
+    expect(
+      classifyLatestGameMoveGrade({
+        bestMove: "g1f3",
+        centipawnLoss: 120,
+        playedMoveUci: "d2d4",
+      }),
+    ).toBe("neutral");
+    expect(
+      classifyLatestGameMoveGrade({
+        bestMove: "g1f3",
+        centipawnLoss: 300,
+        playedMoveUci: "d2d4",
+      }),
+    ).toBe("mistake");
+    expect(
+      classifyLatestGameMoveGrade({
+        bestMove: "g1f3",
+        centipawnLoss: 650,
+        playedMoveUci: "d2d4",
+      }),
+    ).toBe("blunder");
+  });
+
   it("ranks critical moves by centipawn loss and keys cache by settings", () => {
     const moves = [
       { centipawnLoss: 80, gameUrl: "a", moveNumber: 1, playedMove: "e4", playedMoveUci: "e2e4" },

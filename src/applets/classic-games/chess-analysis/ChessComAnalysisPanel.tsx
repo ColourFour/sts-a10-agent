@@ -1,5 +1,5 @@
 import { Chess, type Square as ChessSquare } from "chess.js";
-import { Brain, CheckCircle2, Download, Eye, Repeat2, Search, XCircle } from "lucide-react";
+import { Brain, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Repeat2, Search, Square, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   fetchRecentChessComGames,
@@ -8,6 +8,15 @@ import {
 } from "./chessComApi";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
+import {
+  analyzeLatestGameReview,
+  buildLatestGameReviewCacheKey,
+  normalizeLatestGameReviewSettings,
+  readCachedLatestGameReview,
+  type LatestGameMoveGrade,
+  type LatestGameReviewMove,
+  type LatestGameReviewReport,
+} from "./chessLatestGameReview";
 import { blakeChessTrainerConfig, readConfiguredChessComUsername, saveConfiguredChessComUsername } from "./chessPersonalConfig";
 import { analyzeRecentRapidLosses } from "./chessPersonalEngine";
 import {
@@ -109,6 +118,14 @@ const pieceNames: Record<string, string> = {
   q: "queen",
   r: "rook",
 };
+const latestGameGradeLabels: Record<LatestGameMoveGrade, string> = {
+  best: "Best",
+  blunder: "Blunder",
+  good: "Good",
+  mistake: "Mistake",
+  neutral: "Neutral",
+};
+const latestGameGradeOrder: LatestGameMoveGrade[] = ["best", "good", "neutral", "mistake", "blunder"];
 
 function formatRating(value: number | null): string {
   return value === null ? "n/a" : `${value}`;
@@ -681,6 +698,316 @@ function FenBoard({
         )}
       </div>
     </div>
+  );
+}
+
+function personalGameResultLabel(game: PersonalChessGame): string {
+  if (game.normalizedResult === "win") {
+    return "Win";
+  }
+
+  if (game.normalizedResult === "loss") {
+    return "Loss";
+  }
+
+  if (game.normalizedResult === "draw") {
+    return "Draw";
+  }
+
+  return game.result;
+}
+
+function latestReviewMoveLabel(move: LatestGameReviewMove): string {
+  return `${move.moveNumber}${move.sideToMove === "black" ? "..." : "."} ${move.playedMove}`;
+}
+
+function latestReviewMoveActor(game: PersonalChessGame, move: LatestGameReviewMove): string {
+  return move.isPlayerMove ? "Blake" : game.opponentUsername;
+}
+
+function latestReviewMoveSummary(move: LatestGameReviewMove): string {
+  if (move.grade === "best") {
+    return "This matched Stockfish's first choice or lost almost no evaluation.";
+  }
+
+  if (move.grade === "good") {
+    return "This kept the position healthy with only a small concession.";
+  }
+
+  if (move.grade === "neutral") {
+    return "This was playable, but Stockfish found a cleaner continuation.";
+  }
+
+  if (move.grade === "mistake") {
+    return "This gave up a meaningful part of the position.";
+  }
+
+  return "This caused the largest kind of evaluation swing in the review.";
+}
+
+function LatestGameAutoReviewPanel({
+  analysisSettings,
+  game,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  game: PersonalChessGame;
+}) {
+  const engineRef = useRef<ChessStockfishEngine | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [report, setReport] = useState<LatestGameReviewReport | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewProgress, setReviewProgress] = useState<SelectedDayAnalysisProgress | null>(null);
+  const [reviewRunning, setReviewRunning] = useState(false);
+  const reviewSettings = useMemo(
+    () => normalizeLatestGameReviewSettings(analysisSettings),
+    [analysisSettings.depth, analysisSettings.moveTimeMs],
+  );
+  const cacheKey = useMemo(
+    () => buildLatestGameReviewCacheKey({ game, settings: reviewSettings }),
+    [game, reviewSettings.depth, reviewSettings.lineCount, reviewSettings.moveTimeMs],
+  );
+  const moves = report?.moves ?? [];
+  const boundedIndex = Math.min(selectedIndex, Math.max(0, moves.length - 1));
+  const selectedMove = moves[boundedIndex] ?? null;
+  const progressValue =
+    reviewProgress && reviewProgress.total > 0
+      ? `${Math.min(reviewProgress.current + 1, reviewProgress.total)} / ${reviewProgress.total}`
+      : null;
+
+  const startReview = useCallback(
+    async (force = false) => {
+      abortControllerRef.current?.abort();
+      engineRef.current?.stop();
+      setReviewError(null);
+      setSelectedIndex(0);
+
+      const cached = force ? null : readCachedLatestGameReview(cacheKey);
+      if (cached) {
+        setReport(cached);
+        setReviewProgress({
+          current: cached.moves.length,
+          message: "Loaded cached latest-game review.",
+          total: cached.moves.length,
+        });
+        setReviewRunning(false);
+        return;
+      }
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+      engineRef.current?.dispose();
+      engineRef.current = createStockfishEngine();
+      setReport(null);
+      setReviewRunning(true);
+      setReviewProgress({ current: 0, message: "Preparing latest-game review.", total: 0 });
+
+      try {
+        const nextReport = await analyzeLatestGameReview({
+          engine: engineRef.current,
+          game,
+          onProgress: setReviewProgress,
+          settings: reviewSettings,
+          signal: abortController.signal,
+        });
+        if (!abortController.signal.aborted) {
+          setReport(nextReport);
+          if (nextReport.skippedMoves.length > 0) {
+            setReviewError(`${nextReport.skippedMoves.length} move(s) could not be analyzed.`);
+          }
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          setReviewError(error instanceof Error ? error.message : "Engine analysis unavailable in this browser/build.");
+        }
+      } finally {
+        if (abortControllerRef.current === abortController) {
+          setReviewRunning(false);
+        }
+      }
+    },
+    [cacheKey, game, reviewSettings],
+  );
+
+  useEffect(() => {
+    void startReview(false);
+  }, [startReview]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      engineRef.current?.dispose();
+    };
+  }, []);
+
+  function stopReview() {
+    abortControllerRef.current?.abort();
+    engineRef.current?.stop();
+    setReviewRunning(false);
+    setReviewProgress((currentProgress) => ({
+      current: currentProgress?.current ?? 0,
+      message: "Latest-game review stopped.",
+      total: currentProgress?.total ?? 0,
+    }));
+  }
+
+  const gradeCounts = moves.reduce(
+    (counts, move) => ({
+      ...counts,
+      [move.grade]: counts[move.grade] + 1,
+    }),
+    { best: 0, blunder: 0, good: 0, mistake: 0, neutral: 0 } as Record<LatestGameMoveGrade, number>,
+  );
+
+  return (
+    <section className="latest-game-review-panel" aria-label="Latest game auto-review">
+      <div className="latest-review-header">
+        <div>
+          <p className="eyebrow">Latest game auto-review</p>
+          <h3>
+            {personalGameResultLabel(game)} vs {game.opponentUsername}
+          </h3>
+          <div className="latest-review-meta">
+            <span>{formatDateLabel(game.endDate)} at {formatGameTime(game.endTimestamp)}</span>
+            <span>{personalTimeControlLabel(game.timeClass)} as {sideLabel(game.playerColor)}</span>
+            <span>{game.rated ? "Rated" : "Unrated"} {formatRating(game.playerRatingAfterGame)}</span>
+          </div>
+        </div>
+        <div className="latest-review-actions">
+          <button
+            className="secondary-button"
+            disabled={!selectedMove || boundedIndex === 0}
+            onClick={() => setSelectedIndex((current) => Math.max(0, current - 1))}
+            type="button"
+          >
+            <ChevronLeft size={17} aria-hidden="true" />
+            Previous
+          </button>
+          <span>{moves.length > 0 ? `${boundedIndex + 1} of ${moves.length}` : "0 of 0"}</span>
+          <button
+            className="secondary-button"
+            disabled={!selectedMove || boundedIndex >= moves.length - 1}
+            onClick={() => setSelectedIndex((current) => Math.min(moves.length - 1, current + 1))}
+            type="button"
+          >
+            Next
+            <ChevronRight size={17} aria-hidden="true" />
+          </button>
+          <button className="secondary-button" disabled={reviewRunning} onClick={() => void startReview(true)} type="button">
+            <RefreshCw size={17} aria-hidden="true" />
+            Re-run
+          </button>
+          <button className="secondary-button" disabled={!reviewRunning} onClick={stopReview} type="button">
+            <Square size={15} aria-hidden="true" />
+            Stop
+          </button>
+        </div>
+      </div>
+
+      <div className="latest-review-grade-legend" aria-label="Move grades">
+        {latestGameGradeOrder.map((grade) => (
+          <span className={`move-grade-pill grade-${grade}`} key={grade}>
+            {latestGameGradeLabels[grade]} {gradeCounts[grade] ? gradeCounts[grade] : ""}
+          </span>
+        ))}
+      </div>
+
+      {reviewProgress ? (
+        <p className="helper-text" role="status">
+          {reviewProgress.message}
+          {progressValue ? ` ${progressValue}` : ""}
+        </p>
+      ) : null}
+      {reviewError ? <p className="error-text">Stockfish review issue: {reviewError}</p> : null}
+
+      {selectedMove ? (
+        <>
+          <div className="latest-review-layout">
+            <div className="latest-review-board-column">
+              <FenBoard
+                fen={selectedMove.fenAfter}
+                lastMove={selectedMove.playedMoveUci}
+                mistakeMove={selectedMove.grade === "mistake" || selectedMove.grade === "blunder" ? selectedMove.playedMoveUci : undefined}
+                orientation={game.playerColor}
+                size="large"
+              />
+            </div>
+            <div className="latest-review-copy">
+              <div className="card-topline">
+                <div>
+                  <p className="eyebrow">{selectedMove.isPlayerMove ? "Blake move" : "Opponent move"}</p>
+                  <h3>{latestReviewMoveLabel(selectedMove)}</h3>
+                </div>
+                <span className={`move-grade-pill grade-${selectedMove.grade}`}>
+                  {latestGameGradeLabels[selectedMove.grade]}
+                </span>
+              </div>
+              <p className="coach-explanation">{latestReviewMoveSummary(selectedMove)}</p>
+              <dl className="move-detail-grid latest-review-detail-grid">
+                <div>
+                  <dt>Played by</dt>
+                  <dd>{latestReviewMoveActor(game, selectedMove)}</dd>
+                </div>
+                <div>
+                  <dt>Played</dt>
+                  <dd>{formatMoveLabel(selectedMove.fenBefore, selectedMove.playedMoveUci, selectedMove.playedMove)}</dd>
+                </div>
+                <div>
+                  <dt>Best move</dt>
+                  <dd>{formatMoveLabel(selectedMove.fenBefore, selectedMove.bestMove)}</dd>
+                </div>
+                <div>
+                  <dt>Eval</dt>
+                  <dd>{formatEvaluation(selectedMove.evalBefore)} to {formatEvaluation(selectedMove.evalAfter)}</dd>
+                </div>
+                <div>
+                  <dt>Loss</dt>
+                  <dd>{formatCentipawnLoss(selectedMove.centipawnLoss)}</dd>
+                </div>
+              </dl>
+              <div className="latest-review-lines">
+                <h4>Top positive lines</h4>
+                <ol>
+                  {selectedMove.topLines.slice(0, 5).map((line) => (
+                    <li key={`${line.rank}-${line.move}`}>
+                      <strong>#{line.rank} {formatMoveLabel(selectedMove.fenBefore, line.move)}</strong>
+                      <span>{formatEvaluation(line.evaluation)}</span>
+                      <small>{formatPvLine(selectedMove.fenBefore, line.line)}</small>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <a className="source-game-link" href={game.gameUrl} target="_blank" rel="noreferrer">
+                Source game
+              </a>
+            </div>
+          </div>
+          <div className="latest-review-move-strip" aria-label="Latest game move list">
+            {moves.map((move, index) => (
+              <button
+                aria-pressed={boundedIndex === index}
+                className={`latest-review-move-tab grade-${move.grade} ${boundedIndex === index ? "selected" : ""}`}
+                key={`${move.ply}-${move.playedMoveUci}`}
+                onClick={() => setSelectedIndex(index)}
+                type="button"
+              >
+                <strong>{move.ply}</strong>
+                <span>{move.playedMove}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <section className="analysis-placeholder-panel">
+          <h3>{reviewRunning ? "Review running" : "No reviewed moves yet"}</h3>
+          <p className="helper-text">
+            {reviewRunning
+              ? "Stockfish is preparing the first analyzed move."
+              : "The latest game PGN did not produce reviewed moves."}
+          </p>
+        </section>
+      )}
+    </section>
   );
 }
 
@@ -3169,6 +3496,7 @@ export function ChessComAnalysisPanel() {
       }),
     [personalDrillReviews, personalGames, personalMistakes],
   );
+  const latestPersonalGame = useMemo(() => personalGames.at(-1) ?? null, [personalGames]);
 
   const bumpAnalysisRevision = useCallback(() => {
     setAnalysisRevision((revision) => revision + 1);
@@ -3494,6 +3822,9 @@ export function ChessComAnalysisPanel() {
             <span>{filteredGames.length} {selectedTimeClass} games in review scope</span>
             <span>{archiveCount} monthly archives checked this run</span>
           </div>
+      ) : null}
+      {latestPersonalGame ? (
+        <LatestGameAutoReviewPanel analysisSettings={analysisSettings} game={latestPersonalGame} />
       ) : null}
       {games.length > 0 ? (
         <>

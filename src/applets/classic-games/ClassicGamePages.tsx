@@ -1814,8 +1814,58 @@ export function ChessComAnalysisPage() {
   );
 }
 
+type SuperHexagonTouchControl = "left" | "right";
+
+function SuperHexagonTouchControls({
+  onControlChange,
+}: {
+  onControlChange: (control: SuperHexagonTouchControl, pressed: boolean) => void;
+}) {
+  const pointerActivatedRef = useRef(false);
+  const buttons: { control: SuperHexagonTouchControl; label: string }[] = [
+    { control: "left", label: "Turn L" },
+    { control: "right", label: "Turn R" },
+  ];
+
+  return (
+    <div className="arcade-touch-controls super-touch-controls" aria-label="Touch controls">
+      {buttons.map((button) => (
+        <button
+          key={button.control}
+          onClick={() => {
+            if (pointerActivatedRef.current) {
+              pointerActivatedRef.current = false;
+              return;
+            }
+            onControlChange(button.control, true);
+            window.setTimeout(() => onControlChange(button.control, false), 120);
+          }}
+          onPointerCancel={() => onControlChange(button.control, false)}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            pointerActivatedRef.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onControlChange(button.control, true);
+          }}
+          onPointerLeave={() => onControlChange(button.control, false)}
+          onPointerUp={(event) => {
+            onControlChange(button.control, false);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+          }}
+          type="button"
+        >
+          {button.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function SuperHexagonPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const touchControlsRef = useRef<Record<SuperHexagonTouchControl, boolean>>({ left: false, right: false });
   const [running, setRunning] = useState(false);
   const [score, setScore] = useState(0);
   const [best, setBest] = useState(() => getHighScores("super-hexagon", 1)[0]?.score ?? 0);
@@ -1881,7 +1931,7 @@ export function SuperHexagonPage() {
     ctx.fillText("SUPER HEXAGON", canvas.width / 2, canvas.height / 2 - 16);
     ctx.fillStyle = "#d8d0c2";
     ctx.font = "500 16px system-ui";
-    ctx.fillText(score > 0 ? `Final score ${score}. Space to replay.` : "Press Space, then use arrows or A/D", canvas.width / 2, canvas.height / 2 + 18);
+    ctx.fillText(score > 0 ? `Final score ${score}. Start to replay.` : "Press Start, then use arrows or touch controls", canvas.width / 2, canvas.height / 2 + 18);
   }, [best, crash, running, score]);
 
   useEffect(() => {
@@ -1928,8 +1978,8 @@ export function SuperHexagonPage() {
       last = now;
       elapsed += dt;
       spawn -= dt;
-      if (keys.has("ArrowLeft") || keys.has("a") || keys.has("A")) angle -= dt * 3.8;
-      if (keys.has("ArrowRight") || keys.has("d") || keys.has("D")) angle += dt * 3.8;
+      if (keys.has("ArrowLeft") || keys.has("a") || keys.has("A") || touchControlsRef.current.left) angle -= dt * 3.8;
+      if (keys.has("ArrowRight") || keys.has("d") || keys.has("D") || touchControlsRef.current.right) angle += dt * 3.8;
       if (spawn <= 0) {
         obstacles.push({ radius: 260, gap: Math.floor(Math.random() * 6), rotation: Math.random() * Math.PI * 2 });
         spawn = Math.max(0.55, 1.25 - elapsed * 0.025);
@@ -2023,7 +2073,7 @@ export function SuperHexagonPage() {
             {running ? "Pause" : "Start"}
           </button>
           <ResetButton onClick={resetRun} />
-          <StatusCard message="Use Left/Right arrows or A/D. Space starts or replays after a crash." title={`Score ${score} / Best ${best}`} />
+          <StatusCard message="Use Left/Right arrows, A/D, or the touch controls. Start replays after a crash." title={`Score ${score} / Best ${best}`} />
           <TutorialButton
             gameId="super-hexagon"
             steps={[
@@ -2032,11 +2082,16 @@ export function SuperHexagonPage() {
               { title: "Inspect crashes", text: "On collision, the playfield freezes briefly and marks the contact point before replay.", highlight: "Collision marker" },
             ]}
           />
-          <KeyboardHints hints={["Space: start/replay", "A/D or arrows: rotate", "Esc: close tutorial"]} />
+          <KeyboardHints hints={["Space: start/replay", "A/D or arrows: rotate", "Touch: hold turn", "Esc: close tutorial"]} />
           <HighScorePanel entries={highScores} gameId="super-hexagon" />
         </aside>
         <section className="board-panel super-panel">
           <canvas className="super-canvas" height={520} ref={canvasRef} width={520} />
+          <SuperHexagonTouchControls
+            onControlChange={(control, pressed) => {
+              touchControlsRef.current[control] = pressed;
+            }}
+          />
         </section>
         <RulesList
           intro="Super Hexagon is a reflex challenge. Rotate the small triangle around the center and survive the incoming walls."

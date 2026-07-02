@@ -94,15 +94,48 @@ function ArcadeCanvas({
 
 function ControlPad({
   buttons,
+  onControlChange,
   onPress,
 }: {
   buttons: ArcadeButton[];
+  onControlChange?: (control: ArcadeControl, pressed: boolean) => void;
   onPress: (control: ArcadeControl) => void;
 }) {
+  const pointerActivatedRef = useRef(false);
+
+  function release(control: ArcadeControl) {
+    onControlChange?.(control, false);
+  }
+
   return (
     <div className="arcade-touch-controls" aria-label="Touch controls">
       {buttons.map((button) => (
-        <button key={button.control} onClick={() => onPress(button.control)} type="button">
+        <button
+          key={button.control}
+          onClick={() => {
+            if (pointerActivatedRef.current) {
+              pointerActivatedRef.current = false;
+              return;
+            }
+            onPress(button.control);
+          }}
+          onPointerCancel={() => release(button.control)}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            pointerActivatedRef.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onPress(button.control);
+            onControlChange?.(button.control, true);
+          }}
+          onPointerLeave={() => release(button.control)}
+          onPointerUp={(event) => {
+            release(button.control);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+          }}
+          type="button"
+        >
           {button.label}
         </button>
       ))}
@@ -153,6 +186,10 @@ function useArcadeKeys(onSpace: () => void) {
   }, [onSpace]);
 
   return keysRef;
+}
+
+function holdArcadeControl(keysRef: { current: ArcadeKeyState }, control: ArcadeControl, pressed: boolean) {
+  keysRef.current[control] = pressed;
 }
 
 function drawCabinet(ctx: CanvasRenderingContext2D, width: number, height: number) {
@@ -358,9 +395,15 @@ export function NeonSnakePage() {
           <TutorialButton gameId="neon-snake" steps={snakeTutorial} />
           <KeyboardHints hints={["Space: start/pause/replay", "Arrows/WASD: turn"]} />
           <HighScorePanel entries={highScores} gameId="neon-snake" />
-          <ControlPad buttons={[{ control: "up", label: "Up" }, { control: "left", label: "Left" }, { control: "right", label: "Right" }, { control: "down", label: "Down" }]} onPress={press} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Neon Snake" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Neon Snake" />
+          <ControlPad
+            buttons={[{ control: "up", label: "Up" }, { control: "left", label: "Left" }, { control: "right", label: "Right" }, { control: "down", label: "Down" }]}
+            onControlChange={(control, pressed) => holdArcadeControl(keysRef, control, pressed)}
+            onPress={press}
+          />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Score attack</h2><p className="instructions-intro">Keep the snake alive while collecting sparks. Each spark grows the trail and raises the speed.</p></aside>
       </section>
     </ArcadePageShell>
@@ -467,9 +510,11 @@ export function WingDashPage() {
           <TutorialButton gameId="wing-dash" steps={wingTutorial} />
           <KeyboardHints hints={["Space/W/Up: flap/start", "Reset: replay"]} />
           <HighScorePanel entries={highScores} gameId="wing-dash" />
-          <ControlPad buttons={[{ control: "action", label: "Flap" }]} onPress={flap} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Wing Dash" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Wing Dash" />
+          <ControlPad buttons={[{ control: "action", label: "Flap" }]} onPress={flap} />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Timing run</h2><p className="instructions-intro">Tap to rise, release to fall, and aim for the center of each gate.</p></aside>
       </section>
     </ArcadePageShell>
@@ -593,9 +638,15 @@ export function BrickBreakerPage() {
           <TutorialButton gameId="brick-breaker" steps={brickTutorial} />
           <KeyboardHints hints={["Space: start/replay", "A/D or arrows: move paddle"]} />
           <HighScorePanel entries={highScores} gameId="brick-breaker" />
-          <ControlPad buttons={[{ control: "left", label: "Left" }, { control: "right", label: "Right" }]} onPress={nudge} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Brick Breaker" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Brick Breaker" />
+          <ControlPad
+            buttons={[{ control: "left", label: "Left" }, { control: "right", label: "Right" }]}
+            onControlChange={(control, pressed) => holdArcadeControl(keysRef, control, pressed)}
+            onPress={nudge}
+          />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Clear the wall</h2><p className="instructions-intro">Move the paddle to keep the ball in play and carve through every brick row.</p></aside>
       </section>
     </ArcadePageShell>
@@ -771,9 +822,15 @@ export function BlockStackPage() {
           <TutorialButton gameId="block-stack" steps={blockTutorial} />
           <KeyboardHints hints={["Space: start/replay", "A/D or arrows: move", "W/Up: rotate", "S/Down: soft drop"]} />
           <HighScorePanel entries={highScores} gameId="block-stack" />
-          <ControlPad buttons={[{ control: "up", label: "Rotate" }, { control: "left", label: "Left" }, { control: "right", label: "Right" }, { control: "down", label: "Drop" }]} onPress={move} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Block Stack" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Block Stack" />
+          <ControlPad
+            buttons={[{ control: "up", label: "Rotate" }, { control: "left", label: "Left" }, { control: "right", label: "Right" }, { control: "down", label: "Drop" }]}
+            onControlChange={(control, pressed) => holdArcadeControl(keysRef, control, pressed)}
+            onPress={move}
+          />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Build clean rows</h2><p className="instructions-intro">Move and rotate each falling piece. Completed rows vanish and award points.</p></aside>
       </section>
     </ArcadePageShell>
@@ -964,17 +1021,26 @@ export function StarDriftPage() {
           <TutorialButton gameId="star-drift" steps={starDriftTutorial} />
           <KeyboardHints hints={["Space: start/fire", "A/D or Left/Right: rotate", "W/Up: thrust"]} />
           <HighScorePanel entries={highScores} gameId="star-drift" />
-          <ControlPad buttons={[{ control: "left", label: "Turn L" }, { control: "up", label: "Thrust" }, { control: "right", label: "Turn R" }, { control: "action", label: "Fire" }]} onPress={(control) => {
-            if (control === "left") shipRef.current.angle -= 0.35;
-            if (control === "right") shipRef.current.angle += 0.35;
-            if (control === "up") {
-              shipRef.current.vx += Math.cos(shipRef.current.angle) * 22;
-              shipRef.current.vy += Math.sin(shipRef.current.angle) * 22;
-            }
-            if (control === "action") shoot();
-          }} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Star Drift" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Star Drift" />
+          <ControlPad
+            buttons={[{ control: "left", label: "Turn L" }, { control: "up", label: "Thrust" }, { control: "right", label: "Turn R" }, { control: "action", label: "Fire" }]}
+            onControlChange={(control, pressed) => holdArcadeControl(keysRef, control, pressed)}
+            onPress={(control) => {
+              if (control === "left") shipRef.current.angle -= 0.35;
+              if (control === "right") shipRef.current.angle += 0.35;
+              if (control === "up") {
+                shipRef.current.vx += Math.cos(shipRef.current.angle) * 22;
+                shipRef.current.vy += Math.sin(shipRef.current.angle) * 22;
+              }
+              if (control === "action") {
+                if (phaseRef.current !== "running") start();
+                else shoot();
+              }
+            }}
+          />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Drift and fire</h2><p className="instructions-intro">Rotate, thrust, and fire through incoming rocks. Screen edges wrap around.</p></aside>
       </section>
     </ArcadePageShell>
@@ -1113,13 +1179,22 @@ export function SectorInvadersPage() {
           <TutorialButton gameId="sector-invaders" steps={invaderTutorial} />
           <KeyboardHints hints={["Space: start/fire", "A/D or Left/Right: move"]} />
           <HighScorePanel entries={highScores} gameId="sector-invaders" />
-          <ControlPad buttons={[{ control: "left", label: "Left" }, { control: "action", label: "Fire" }, { control: "right", label: "Right" }]} onPress={(control) => {
-            if (control === "left") playerRef.current = Math.max(16, playerRef.current - 34);
-            if (control === "right") playerRef.current = Math.min(474, playerRef.current + 34);
-            if (control === "action") fire();
-          }} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Sector Invaders" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Sector Invaders" />
+          <ControlPad
+            buttons={[{ control: "left", label: "Left" }, { control: "action", label: "Fire" }, { control: "right", label: "Right" }]}
+            onControlChange={(control, pressed) => holdArcadeControl(keysRef, control, pressed)}
+            onPress={(control) => {
+              if (control === "left") playerRef.current = Math.max(16, playerRef.current - 34);
+              if (control === "right") playerRef.current = Math.min(474, playerRef.current + 34);
+              if (control === "action") {
+                if (phaseRef.current !== "running") start();
+                else fire();
+              }
+            }}
+          />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Clear waves</h2><p className="instructions-intro">Move under the formation, fire upward, and prevent the row from crossing the warning line.</p></aside>
       </section>
     </ArcadePageShell>
@@ -1242,12 +1317,18 @@ export function PaddlePopPage() {
           <TutorialButton gameId="paddle-pop" steps={paddlePopTutorial} />
           <KeyboardHints hints={["Space: start/replay", "A/D or Left/Right: move paddle"]} />
           <HighScorePanel entries={highScores} gameId="paddle-pop" />
-          <ControlPad buttons={[{ control: "left", label: "Left" }, { control: "right", label: "Right" }]} onPress={(control) => {
-            if (control === "left") paddleRef.current = Math.max(12, paddleRef.current - 36);
-            if (control === "right") paddleRef.current = Math.min(408, paddleRef.current + 36);
-          }} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Paddle Pop" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Paddle Pop" />
+          <ControlPad
+            buttons={[{ control: "left", label: "Left" }, { control: "right", label: "Right" }]}
+            onControlChange={(control, pressed) => holdArcadeControl(keysRef, control, pressed)}
+            onPress={(control) => {
+              if (control === "left") paddleRef.current = Math.max(12, paddleRef.current - 36);
+              if (control === "right") paddleRef.current = Math.min(408, paddleRef.current + 36);
+            }}
+          />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Keep it alive</h2><p className="instructions-intro">Slide under the ball, angle rebounds with the paddle, and clear the target field.</p></aside>
       </section>
     </ArcadePageShell>
@@ -1339,12 +1420,18 @@ export function WallPongPage() {
           <TutorialButton gameId="wall-pong" steps={wallPongTutorial} />
           <KeyboardHints hints={["Space: start/replay", "W/S or Up/Down: move paddle"]} />
           <HighScorePanel entries={highScores} gameId="wall-pong" />
-          <ControlPad buttons={[{ control: "up", label: "Up" }, { control: "down", label: "Down" }]} onPress={(control) => {
-            if (control === "up") paddleRef.current = Math.max(20, paddleRef.current - 36);
-            if (control === "down") paddleRef.current = Math.min(400, paddleRef.current + 36);
-          }} />
         </aside>
-        <section className="board-panel arcade-panel"><ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Wall Pong" /></section>
+        <section className="board-panel arcade-panel">
+          <ArcadeCanvas canvasRef={canvasRef} phase={phase} title="Wall Pong" />
+          <ControlPad
+            buttons={[{ control: "up", label: "Up" }, { control: "down", label: "Down" }]}
+            onControlChange={(control, pressed) => holdArcadeControl(keysRef, control, pressed)}
+            onPress={(control) => {
+              if (control === "up") paddleRef.current = Math.max(20, paddleRef.current - 36);
+              if (control === "down") paddleRef.current = Math.min(400, paddleRef.current + 36);
+            }}
+          />
+        </section>
         <aside className="rules-panel"><p className="eyebrow">How to play</p><h2>Return streak</h2><p className="instructions-intro">Track the ball after it bounces from the far wall and keep the rally alive.</p></aside>
       </section>
     </ArcadePageShell>
