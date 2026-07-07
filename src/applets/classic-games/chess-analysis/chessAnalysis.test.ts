@@ -2,6 +2,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ChessComApiGame } from "./chessComApi";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
+import {
+  accuracyFromExpectedPointLoss,
+  buildIndividualGameReviewCacheKey,
+  classifyIndividualMove,
+  evaluationToExpectedPoints,
+  expectedPointLoss,
+  readCachedIndividualGameReview,
+  summarizeIndividualGameReview,
+  writeCachedIndividualGameReview,
+  type IndividualGameReviewMove,
+  type IndividualGameReviewReport,
+} from "./chessIndividualGameReview";
 import { classifyLatestGameMoveGrade } from "./chessLatestGameReview";
 import { blakeChessTrainerConfig } from "./chessPersonalConfig";
 import { buildPersonalChessReport, classifyPersonalLeakTag } from "./chessPersonalInsights";
@@ -492,6 +504,161 @@ describe("PGN position extraction", () => {
       playedMoveUci: "e7e5",
       ply: 2,
       sideToMove: "black",
+    });
+  });
+});
+
+describe("individual game review helpers", () => {
+  function reviewMove(overrides: Partial<IndividualGameReviewMove>): IndividualGameReviewMove {
+    return {
+      accuracy: 100,
+      bestMove: "e2e4",
+      centipawnLoss: 0,
+      classification: "best",
+      evalAfter: { type: "cp", value: 20 },
+      evalBefore: { type: "cp", value: 20 },
+      expectedPointAfter: 52,
+      expectedPointBefore: 52,
+      expectedPointLoss: 0,
+      fenAfter: "after",
+      fenBefore: "before",
+      gameUrl: "https://www.chess.com/game/live/review-1",
+      isPlayerMove: true,
+      moveNumber: 1,
+      playedMove: "e4",
+      playedMoveUci: "e2e4",
+      playerColor: "white",
+      ply: 1,
+      sacrificedMaterialCp: 0,
+      sideToMove: "white",
+      topLineExpectedGap: 0,
+      topLines: [],
+      ...overrides,
+    };
+  }
+
+  it("converts engine evaluations to expected points and local accuracy", () => {
+    expect(evaluationToExpectedPoints({ type: "cp", value: 0 })).toBeCloseTo(50, 1);
+    expect(evaluationToExpectedPoints({ type: "cp", value: 500 })).toBeGreaterThan(85);
+    expect(evaluationToExpectedPoints({ type: "cp", value: -500 })).toBeLessThan(15);
+    expect(expectedPointLoss({ type: "cp", value: 300 }, { type: "cp", value: 0 })).toBeGreaterThan(20);
+    expect(accuracyFromExpectedPointLoss(0)).toBe(100);
+    expect(accuracyFromExpectedPointLoss(28)).toBeLessThan(40);
+  });
+
+  it("classifies book, brilliant, great, miss, and blunder moves with local heuristics", () => {
+    expect(
+      classifyIndividualMove({
+        bestMove: "e2e4",
+        centipawnLoss: 0,
+        evalAfter: { type: "cp", value: 20 },
+        evalBefore: { type: "cp", value: 20 },
+        expectedPointLoss: 0,
+        playedMoveUci: "e2e4",
+        ply: 3,
+        sacrificedMaterialCp: 0,
+        topLineExpectedGap: 0,
+      }),
+    ).toBe("book");
+    expect(
+      classifyIndividualMove({
+        bestMove: "b1c3",
+        centipawnLoss: 12,
+        evalAfter: { type: "cp", value: 90 },
+        evalBefore: { type: "cp", value: 100 },
+        expectedPointLoss: 1,
+        playedMoveUci: "b1c3",
+        ply: 18,
+        sacrificedMaterialCp: 330,
+        topLineExpectedGap: 2,
+      }),
+    ).toBe("brilliant");
+    expect(
+      classifyIndividualMove({
+        bestMove: "g1f3",
+        centipawnLoss: 8,
+        evalAfter: { type: "cp", value: 70 },
+        evalBefore: { type: "cp", value: 78 },
+        expectedPointLoss: 1,
+        playedMoveUci: "g1f3",
+        ply: 20,
+        sacrificedMaterialCp: 0,
+        topLineExpectedGap: 16,
+      }),
+    ).toBe("great");
+    expect(
+      classifyIndividualMove({
+        bestMove: "d1h5",
+        centipawnLoss: 320,
+        evalAfter: { type: "cp", value: 40 },
+        evalBefore: { type: "cp", value: 360 },
+        expectedPointLoss: 28,
+        playedMoveUci: "a2a3",
+        ply: 22,
+        sacrificedMaterialCp: 0,
+        topLineExpectedGap: 0,
+      }),
+    ).toBe("miss");
+    expect(
+      classifyIndividualMove({
+        bestMove: "g8f6",
+        centipawnLoss: 620,
+        evalAfter: { type: "cp", value: -560 },
+        evalBefore: { type: "cp", value: 60 },
+        expectedPointLoss: 55,
+        playedMoveUci: "a7a5",
+        ply: 24,
+        sacrificedMaterialCp: 0,
+        topLineExpectedGap: 0,
+      }),
+    ).toBe("blunder");
+  });
+
+  it("summarizes local accuracy and classification counts by side", () => {
+    const summary = summarizeIndividualGameReview({
+      accountColor: "black",
+      moves: [
+        reviewMove({ accuracy: 96, classification: "best", sideToMove: "white" }),
+        reviewMove({ accuracy: 80, classification: "inaccuracy", isPlayerMove: true, sideToMove: "black" }),
+        reviewMove({ accuracy: 52, classification: "blunder", isPlayerMove: false, sideToMove: "white" }),
+      ],
+    });
+
+    expect(summary.whiteAccuracy).toBe(74);
+    expect(summary.blackAccuracy).toBe(80);
+    expect(summary.accountAccuracy).toBe(80);
+    expect(summary.classificationCounts.best).toBe(1);
+    expect(summary.classificationCounts.blunder).toBe(1);
+    expect(summary.keyMoveCount).toBe(2);
+  });
+
+  it("keys and restores cached individual game reviews independently", () => {
+    installLocalStorageMock();
+    const personalGame = normalizePersonalChessComGames(
+      [game({ end_time: dayOneMorning, url: "https://www.chess.com/game/live/review-cache-1" })],
+      "TestPlayer",
+    )[0];
+    const settings = { depth: 10, lineCount: 5, moveTimeMs: 400 };
+    const cacheKey = buildIndividualGameReviewCacheKey({ game: personalGame, settings });
+    const cachedReport: IndividualGameReviewReport = {
+      cacheKey,
+      completedAt: "2026-06-02T12:00:00.000Z",
+      gameId: personalGame.gameId,
+      gameUrl: personalGame.gameUrl,
+      incomplete: false,
+      moves: [reviewMove({ gameUrl: personalGame.gameUrl })],
+      settings,
+      skippedMoves: [],
+      source: "stockfish-lite-single",
+      summary: summarizeIndividualGameReview({ accountColor: personalGame.playerColor, moves: [] }),
+    };
+
+    writeCachedIndividualGameReview(cacheKey, cachedReport);
+
+    expect(cacheKey).toContain("review-cache-1");
+    expect(readCachedIndividualGameReview(cacheKey)).toMatchObject({
+      gameUrl: personalGame.gameUrl,
+      moves: [{ playedMove: "e4" }],
     });
   });
 });

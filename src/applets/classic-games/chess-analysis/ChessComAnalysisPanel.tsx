@@ -1,6 +1,6 @@
 import { Chess, type Square as ChessSquare } from "chess.js";
 import { Brain, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Repeat2, Search, Square, XCircle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
   fetchRecentChessComGames,
   readLastChessComUsername,
@@ -9,14 +9,17 @@ import {
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
 import {
-  analyzeLatestGameReview,
-  buildLatestGameReviewCacheKey,
-  normalizeLatestGameReviewSettings,
-  readCachedLatestGameReview,
-  type LatestGameMoveGrade,
-  type LatestGameReviewMove,
-  type LatestGameReviewReport,
-} from "./chessLatestGameReview";
+  analyzeIndividualGameReview,
+  buildIndividualGameReviewCacheKey,
+  individualClassificationOrder,
+  individualKeyClassifications,
+  normalizeIndividualGameReviewSettings,
+  readCachedIndividualGameReview,
+  type IndividualGameReviewMove,
+  type IndividualGameReviewReport,
+  type IndividualMoveClassification,
+  type IndividualReviewPerspective,
+} from "./chessIndividualGameReview";
 import { blakeChessTrainerConfig, readConfiguredChessComUsername, saveConfiguredChessComUsername } from "./chessPersonalConfig";
 import { analyzeRecentRapidLosses } from "./chessPersonalEngine";
 import {
@@ -42,6 +45,7 @@ import type {
   PersonalChessGame,
   PersonalChessImportResult,
   PersonalChessMistake,
+  PersonalChessOutcome,
   PersonalChessSyncMeta,
   PersonalChessTimeClass,
   PersonalDrillReview,
@@ -118,14 +122,24 @@ const pieceNames: Record<string, string> = {
   q: "queen",
   r: "rook",
 };
-const latestGameGradeLabels: Record<LatestGameMoveGrade, string> = {
+const individualClassificationLabels: Record<IndividualMoveClassification, string> = {
   best: "Best",
   blunder: "Blunder",
+  book: "Book",
+  brilliant: "Brilliant",
+  excellent: "Excellent",
   good: "Good",
+  great: "Great",
+  inaccuracy: "Inaccuracy",
+  miss: "Miss",
   mistake: "Mistake",
-  neutral: "Neutral",
 };
-const latestGameGradeOrder: LatestGameMoveGrade[] = ["best", "good", "neutral", "mistake", "blunder"];
+const reviewPerspectiveLabels: Record<IndividualReviewPerspective, string> = {
+  account: "Account",
+  black: "Black",
+  both: "Both",
+  white: "White",
+};
 
 function formatRating(value: number | null): string {
   return value === null ? "n/a" : `${value}`;
@@ -717,35 +731,130 @@ function personalGameResultLabel(game: PersonalChessGame): string {
   return game.result;
 }
 
-function latestReviewMoveLabel(move: LatestGameReviewMove): string {
+function formatAccuracy(value: number | null): string {
+  return value === null ? "n/a" : `${value.toFixed(1)}%`;
+}
+
+function individualReviewMoveLabel(move: IndividualGameReviewMove): string {
   return `${move.moveNumber}${move.sideToMove === "black" ? "..." : "."} ${move.playedMove}`;
 }
 
-function latestReviewMoveActor(game: PersonalChessGame, move: LatestGameReviewMove): string {
-  return move.isPlayerMove ? "Blake" : game.opponentUsername;
+function individualReviewMoveActor(game: PersonalChessGame, move: IndividualGameReviewMove): string {
+  return move.sideToMove === game.playerColor ? sideLabel(game.playerColor) : game.opponentUsername;
 }
 
-function latestReviewMoveSummary(move: LatestGameReviewMove): string {
-  if (move.grade === "best") {
-    return "This matched Stockfish's first choice or lost almost no evaluation.";
+function individualReviewMoveSummary(move: IndividualGameReviewMove): string {
+  if (move.classification === "brilliant") {
+    return "This local review marks the move as a strong engine-approved sacrifice or material concession.";
   }
 
-  if (move.grade === "good") {
-    return "This kept the position healthy with only a small concession.";
+  if (move.classification === "great") {
+    return "This was close to the engine's top move in a position where the next alternatives dropped off quickly.";
   }
 
-  if (move.grade === "neutral") {
-    return "This was playable, but Stockfish found a cleaner continuation.";
+  if (move.classification === "book") {
+    return "This early move stayed within the local book-style range with almost no engine loss.";
   }
 
-  if (move.grade === "mistake") {
-    return "This gave up a meaningful part of the position.";
+  if (move.classification === "best") {
+    return "This matched the engine's first choice or lost almost no expected points.";
   }
 
-  return "This caused the largest kind of evaluation swing in the review.";
+  if (move.classification === "excellent") {
+    return "This kept nearly all of the position's expected result.";
+  }
+
+  if (move.classification === "good") {
+    return "This was playable and kept the position healthy.";
+  }
+
+  if (move.classification === "inaccuracy") {
+    return "This gave up a small but visible part of the position.";
+  }
+
+  if (move.classification === "mistake") {
+    return "This gave up a meaningful part of the position and is worth replaying.";
+  }
+
+  if (move.classification === "miss") {
+    return "This missed a locally winning or clearly better chance.";
+  }
+
+  return "This caused the largest expected-points swing in the review.";
 }
 
-function LatestGameAutoReviewPanel({
+function moveMatchesPerspective(game: PersonalChessGame, move: IndividualGameReviewMove, perspective: IndividualReviewPerspective): boolean {
+  if (perspective === "both") {
+    return true;
+  }
+
+  if (perspective === "account") {
+    return move.sideToMove === game.playerColor;
+  }
+
+  return move.sideToMove === perspective;
+}
+
+function whitePerspectiveCentipawns(move: IndividualGameReviewMove): number {
+  const moverCentipawns = evaluationToCentipawns(move.evalAfter);
+  return move.sideToMove === "white" ? moverCentipawns : -moverCentipawns;
+}
+
+function graphPointTop(move: IndividualGameReviewMove): number {
+  const whiteCentipawns = Math.max(-700, Math.min(700, whitePerspectiveCentipawns(move)));
+  return Math.max(8, Math.min(92, 50 - whiteCentipawns / 16));
+}
+
+function isRetryMove(move: IndividualGameReviewMove): boolean {
+  return move.classification === "blunder" || move.classification === "miss" || move.classification === "mistake";
+}
+
+function IndividualReviewGraph({
+  moves,
+  onSelectMove,
+  selectedMove,
+}: {
+  moves: IndividualGameReviewMove[];
+  onSelectMove: (move: IndividualGameReviewMove) => void;
+  selectedMove: IndividualGameReviewMove | null;
+}) {
+  if (moves.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="individual-review-graph" aria-label="Local advantage graph">
+      {moves.map((move, index) => (
+        <button
+          aria-label={`Move ${move.ply}: ${individualReviewMoveLabel(move)}, ${formatEvaluation(move.evalAfter)}`}
+          aria-pressed={selectedMove?.ply === move.ply}
+          className={`individual-graph-point class-${move.classification} ${selectedMove?.ply === move.ply ? "selected" : ""}`}
+          key={`${move.ply}-${move.playedMoveUci}`}
+          onClick={() => onSelectMove(move)}
+          style={
+            {
+              "--graph-position": moves.length <= 1 ? 0 : index / (moves.length - 1),
+              top: `${graphPointTop(move)}%`,
+            } as CSSProperties
+          }
+          type="button"
+        />
+      ))}
+      <span className="individual-graph-midline" />
+    </div>
+  );
+}
+
+function IndividualMetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="individual-review-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function IndividualGameReviewPanel({
   analysisSettings,
   game,
 }: {
@@ -754,22 +863,36 @@ function LatestGameAutoReviewPanel({
 }) {
   const engineRef = useRef<ChessStockfishEngine | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const [report, setReport] = useState<LatestGameReviewReport | null>(null);
+  const [report, setReport] = useState<IndividualGameReviewReport | null>(null);
+  const [reviewPerspective, setReviewPerspective] = useState<IndividualReviewPerspective>("both");
+  const [retryMode, setRetryMode] = useState(false);
+  const [retryAnswerVisible, setRetryAnswerVisible] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewProgress, setReviewProgress] = useState<SelectedDayAnalysisProgress | null>(null);
   const [reviewRunning, setReviewRunning] = useState(false);
   const reviewSettings = useMemo(
-    () => normalizeLatestGameReviewSettings(analysisSettings),
+    () => normalizeIndividualGameReviewSettings(analysisSettings),
     [analysisSettings.depth, analysisSettings.moveTimeMs],
   );
   const cacheKey = useMemo(
-    () => buildLatestGameReviewCacheKey({ game, settings: reviewSettings }),
+    () => buildIndividualGameReviewCacheKey({ game, settings: reviewSettings }),
     [game, reviewSettings.depth, reviewSettings.lineCount, reviewSettings.moveTimeMs],
   );
-  const moves = report?.moves ?? [];
-  const boundedIndex = Math.min(selectedIndex, Math.max(0, moves.length - 1));
-  const selectedMove = moves[boundedIndex] ?? null;
+  const allMoves = report?.moves ?? [];
+  const visibleMoves = useMemo(
+    () =>
+      allMoves
+        .filter((move) => moveMatchesPerspective(game, move, reviewPerspective))
+        .filter((move) => !retryMode || isRetryMove(move)),
+    [allMoves, game, retryMode, reviewPerspective],
+  );
+  const boundedIndex = Math.min(selectedIndex, Math.max(0, visibleMoves.length - 1));
+  const selectedMove = visibleMoves[boundedIndex] ?? null;
+  const selectedMoveIsRetry = Boolean(selectedMove && retryMode && isRetryMove(selectedMove));
+  const showMoveAnswer = !selectedMoveIsRetry || retryAnswerVisible;
+  const selectedBoardFen = selectedMoveIsRetry && !retryAnswerVisible ? selectedMove?.fenBefore : selectedMove?.fenAfter;
+  const nextKeyIndex = visibleMoves.findIndex((move, index) => index > boundedIndex && individualKeyClassifications.has(move.classification));
   const progressValue =
     reviewProgress && reviewProgress.total > 0
       ? `${Math.min(reviewProgress.current + 1, reviewProgress.total)} / ${reviewProgress.total}`
@@ -781,13 +904,14 @@ function LatestGameAutoReviewPanel({
       engineRef.current?.stop();
       setReviewError(null);
       setSelectedIndex(0);
+      setRetryAnswerVisible(false);
 
-      const cached = force ? null : readCachedLatestGameReview(cacheKey);
+      const cached = force ? null : readCachedIndividualGameReview(cacheKey);
       if (cached) {
         setReport(cached);
         setReviewProgress({
           current: cached.moves.length,
-          message: "Loaded cached latest-game review.",
+          message: "Loaded cached individual game review.",
           total: cached.moves.length,
         });
         setReviewRunning(false);
@@ -800,10 +924,10 @@ function LatestGameAutoReviewPanel({
       engineRef.current = createStockfishEngine();
       setReport(null);
       setReviewRunning(true);
-      setReviewProgress({ current: 0, message: "Preparing latest-game review.", total: 0 });
+      setReviewProgress({ current: 0, message: "Preparing individual game review.", total: 0 });
 
       try {
-        const nextReport = await analyzeLatestGameReview({
+        const nextReport = await analyzeIndividualGameReview({
           engine: engineRef.current,
           game,
           onProgress: setReviewProgress,
@@ -813,7 +937,7 @@ function LatestGameAutoReviewPanel({
         if (!abortController.signal.aborted) {
           setReport(nextReport);
           if (nextReport.skippedMoves.length > 0) {
-            setReviewError(`${nextReport.skippedMoves.length} move(s) could not be analyzed.`);
+            setReviewError(`${nextReport.skippedMoves.length} move(s) could not be reviewed.`);
           }
         }
       } catch (error) {
@@ -834,6 +958,11 @@ function LatestGameAutoReviewPanel({
   }, [startReview]);
 
   useEffect(() => {
+    setSelectedIndex(0);
+    setRetryAnswerVisible(false);
+  }, [game.gameUrl, report, retryMode, reviewPerspective]);
+
+  useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
       engineRef.current?.dispose();
@@ -846,52 +975,61 @@ function LatestGameAutoReviewPanel({
     setReviewRunning(false);
     setReviewProgress((currentProgress) => ({
       current: currentProgress?.current ?? 0,
-      message: "Latest-game review stopped.",
+      message: "Individual game review stopped.",
       total: currentProgress?.total ?? 0,
     }));
   }
 
-  const gradeCounts = moves.reduce(
-    (counts, move) => ({
-      ...counts,
-      [move.grade]: counts[move.grade] + 1,
-    }),
-    { best: 0, blunder: 0, good: 0, mistake: 0, neutral: 0 } as Record<LatestGameMoveGrade, number>,
-  );
-
   return (
-    <section className="latest-game-review-panel" aria-label="Latest game auto-review">
-      <div className="latest-review-header">
+    <section className="individual-game-review-panel" aria-label="Individual game review">
+      <div className="individual-review-header">
         <div>
-          <p className="eyebrow">Latest game auto-review</p>
+          <p className="eyebrow">Individual game review</p>
           <h3>
             {personalGameResultLabel(game)} vs {game.opponentUsername}
           </h3>
-          <div className="latest-review-meta">
+          <div className="individual-review-meta">
             <span>{formatDateLabel(game.endDate)} at {formatGameTime(game.endTimestamp)}</span>
             <span>{personalTimeControlLabel(game.timeClass)} as {sideLabel(game.playerColor)}</span>
             <span>{game.rated ? "Rated" : "Unrated"} {formatRating(game.playerRatingAfterGame)}</span>
           </div>
         </div>
-        <div className="latest-review-actions">
+        <div className="individual-review-actions">
           <button
             className="secondary-button"
             disabled={!selectedMove || boundedIndex === 0}
-            onClick={() => setSelectedIndex((current) => Math.max(0, current - 1))}
+            onClick={() => {
+              setRetryAnswerVisible(false);
+              setSelectedIndex((current) => Math.max(0, current - 1));
+            }}
             type="button"
           >
             <ChevronLeft size={17} aria-hidden="true" />
             Previous
           </button>
-          <span>{moves.length > 0 ? `${boundedIndex + 1} of ${moves.length}` : "0 of 0"}</span>
+          <span>{visibleMoves.length > 0 ? `${boundedIndex + 1} of ${visibleMoves.length}` : "0 of 0"}</span>
           <button
             className="secondary-button"
-            disabled={!selectedMove || boundedIndex >= moves.length - 1}
-            onClick={() => setSelectedIndex((current) => Math.min(moves.length - 1, current + 1))}
+            disabled={!selectedMove || boundedIndex >= visibleMoves.length - 1}
+            onClick={() => {
+              setRetryAnswerVisible(false);
+              setSelectedIndex((current) => Math.min(visibleMoves.length - 1, current + 1));
+            }}
             type="button"
           >
             Next
             <ChevronRight size={17} aria-hidden="true" />
+          </button>
+          <button
+            className="secondary-button"
+            disabled={nextKeyIndex < 0}
+            onClick={() => {
+              setRetryAnswerVisible(false);
+              setSelectedIndex(nextKeyIndex);
+            }}
+            type="button"
+          >
+            Next key move
           </button>
           <button className="secondary-button" disabled={reviewRunning} onClick={() => void startReview(true)} type="button">
             <RefreshCw size={17} aria-hidden="true" />
@@ -904,10 +1042,60 @@ function LatestGameAutoReviewPanel({
         </div>
       </div>
 
-      <div className="latest-review-grade-legend" aria-label="Move grades">
-        {latestGameGradeOrder.map((grade) => (
-          <span className={`move-grade-pill grade-${grade}`} key={grade}>
-            {latestGameGradeLabels[grade]} {gradeCounts[grade] ? gradeCounts[grade] : ""}
+      <div className="individual-review-controls">
+        <div className="coach-mode-selector" role="group" aria-label="Review as">
+          {(Object.keys(reviewPerspectiveLabels) as IndividualReviewPerspective[]).map((perspective) => (
+            <button
+              aria-pressed={reviewPerspective === perspective}
+              className={reviewPerspective === perspective ? "selected" : ""}
+              key={perspective}
+              onClick={() => setReviewPerspective(perspective)}
+              type="button"
+            >
+              {reviewPerspectiveLabels[perspective]}
+            </button>
+          ))}
+        </div>
+        <button
+          aria-pressed={retryMode}
+          className={`secondary-button ${retryMode ? "selected" : ""}`}
+          disabled={!report || report.summary.keyMoveCount === 0}
+          onClick={() => {
+            setRetryMode((current) => !current);
+            setRetryAnswerVisible(false);
+          }}
+          type="button"
+        >
+          <Repeat2 size={17} aria-hidden="true" />
+          Retry key moves
+        </button>
+      </div>
+
+      {report ? (
+        <>
+          <div className="individual-review-summary-grid" aria-label="Local review summary">
+            <IndividualMetricCard label="White local accuracy" value={formatAccuracy(report.summary.whiteAccuracy)} />
+            <IndividualMetricCard label="Black local accuracy" value={formatAccuracy(report.summary.blackAccuracy)} />
+            <IndividualMetricCard label="Account local accuracy" value={formatAccuracy(report.summary.accountAccuracy)} />
+            <IndividualMetricCard label="Key moves" value={`${report.summary.keyMoveCount}`} />
+          </div>
+          <IndividualReviewGraph
+            moves={allMoves}
+            onSelectMove={(move) => {
+              setReviewPerspective("both");
+              setRetryMode(false);
+              setRetryAnswerVisible(false);
+              setSelectedIndex(Math.max(0, allMoves.findIndex((candidate) => candidate.ply === move.ply)));
+            }}
+            selectedMove={selectedMove}
+          />
+        </>
+      ) : null}
+
+      <div className="individual-review-grade-legend" aria-label="Move classifications">
+        {individualClassificationOrder.map((classification) => (
+          <span className={`move-grade-pill class-${classification}`} key={classification}>
+            {individualClassificationLabels[classification]} {report?.summary.classificationCounts[classification] ? report.summary.classificationCounts[classification] : ""}
           </span>
         ))}
       </div>
@@ -920,33 +1108,43 @@ function LatestGameAutoReviewPanel({
       ) : null}
       {reviewError ? <p className="error-text">Stockfish review issue: {reviewError}</p> : null}
 
-      {selectedMove ? (
+      {selectedMove && selectedBoardFen ? (
         <>
-          <div className="latest-review-layout">
-            <div className="latest-review-board-column">
+          <div className="individual-review-layout">
+            <div className="individual-review-board-column">
               <FenBoard
-                fen={selectedMove.fenAfter}
-                lastMove={selectedMove.playedMoveUci}
-                mistakeMove={selectedMove.grade === "mistake" || selectedMove.grade === "blunder" ? selectedMove.playedMoveUci : undefined}
+                bestMove={selectedMoveIsRetry && retryAnswerVisible ? selectedMove.bestMove : undefined}
+                fen={selectedBoardFen}
+                lastMove={showMoveAnswer ? selectedMove.playedMoveUci : undefined}
+                mistakeMove={showMoveAnswer && individualKeyClassifications.has(selectedMove.classification) ? selectedMove.playedMoveUci : undefined}
                 orientation={game.playerColor}
                 size="large"
               />
+              {selectedMoveIsRetry ? (
+                <div className="individual-retry-panel">
+                  <strong>{retryAnswerVisible ? "Answer revealed" : "Retry this move"}</strong>
+                  <span>{retryAnswerVisible ? `Best move: ${formatMoveLabel(selectedMove.fenBefore, selectedMove.bestMove)}` : `Find a better move for ${sideLabel(selectedMove.sideToMove)}.`}</span>
+                  <button className="secondary-button primary-action" onClick={() => setRetryAnswerVisible((current) => !current)} type="button">
+                    {retryAnswerVisible ? "Hide answer" : "Reveal answer"}
+                  </button>
+                </div>
+              ) : null}
             </div>
-            <div className="latest-review-copy">
+            <div className="individual-review-copy">
               <div className="card-topline">
                 <div>
-                  <p className="eyebrow">{selectedMove.isPlayerMove ? "Blake move" : "Opponent move"}</p>
-                  <h3>{latestReviewMoveLabel(selectedMove)}</h3>
+                  <p className="eyebrow">{selectedMove.sideToMove === game.playerColor ? "Account move" : "Opponent move"}</p>
+                  <h3>{individualReviewMoveLabel(selectedMove)}</h3>
                 </div>
-                <span className={`move-grade-pill grade-${selectedMove.grade}`}>
-                  {latestGameGradeLabels[selectedMove.grade]}
+                <span className={`move-grade-pill class-${selectedMove.classification}`}>
+                  {individualClassificationLabels[selectedMove.classification]}
                 </span>
               </div>
-              <p className="coach-explanation">{latestReviewMoveSummary(selectedMove)}</p>
-              <dl className="move-detail-grid latest-review-detail-grid">
+              <p className="coach-explanation">{individualReviewMoveSummary(selectedMove)}</p>
+              <dl className="move-detail-grid individual-review-detail-grid">
                 <div>
                   <dt>Played by</dt>
-                  <dd>{latestReviewMoveActor(game, selectedMove)}</dd>
+                  <dd>{individualReviewMoveActor(game, selectedMove)}</dd>
                 </div>
                 <div>
                   <dt>Played</dt>
@@ -961,34 +1159,47 @@ function LatestGameAutoReviewPanel({
                   <dd>{formatEvaluation(selectedMove.evalBefore)} to {formatEvaluation(selectedMove.evalAfter)}</dd>
                 </div>
                 <div>
-                  <dt>Loss</dt>
+                  <dt>Expected loss</dt>
+                  <dd>{selectedMove.expectedPointLoss.toFixed(1)} pts</dd>
+                </div>
+                <div>
+                  <dt>Local accuracy</dt>
+                  <dd>{formatAccuracy(selectedMove.accuracy)}</dd>
+                </div>
+                <div>
+                  <dt>Centipawns</dt>
                   <dd>{formatCentipawnLoss(selectedMove.centipawnLoss)}</dd>
                 </div>
               </dl>
-              <div className="latest-review-lines">
-                <h4>Top positive lines</h4>
-                <ol>
-                  {selectedMove.topLines.slice(0, 5).map((line) => (
-                    <li key={`${line.rank}-${line.move}`}>
-                      <strong>#{line.rank} {formatMoveLabel(selectedMove.fenBefore, line.move)}</strong>
-                      <span>{formatEvaluation(line.evaluation)}</span>
-                      <small>{formatPvLine(selectedMove.fenBefore, line.line)}</small>
-                    </li>
-                  ))}
-                </ol>
-              </div>
+              {showMoveAnswer ? (
+                <div className="individual-review-lines">
+                  <h4>Top positive lines</h4>
+                  <ol>
+                    {selectedMove.topLines.slice(0, 5).map((line) => (
+                      <li key={`${line.rank}-${line.move}`}>
+                        <strong>#{line.rank} {formatMoveLabel(selectedMove.fenBefore, line.move)}</strong>
+                        <span>{formatEvaluation(line.evaluation)}</span>
+                        <small>{formatPvLine(selectedMove.fenBefore, line.line)}</small>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
               <a className="source-game-link" href={game.gameUrl} target="_blank" rel="noreferrer">
                 Source game
               </a>
             </div>
           </div>
-          <div className="latest-review-move-strip" aria-label="Latest game move list">
-            {moves.map((move, index) => (
+          <div className="individual-review-move-strip" aria-label="Individual game move list">
+            {visibleMoves.map((move, index) => (
               <button
                 aria-pressed={boundedIndex === index}
-                className={`latest-review-move-tab grade-${move.grade} ${boundedIndex === index ? "selected" : ""}`}
+                className={`individual-review-move-tab class-${move.classification} ${move.sideToMove === game.playerColor ? "account-move" : ""} ${boundedIndex === index ? "selected" : ""}`}
                 key={`${move.ply}-${move.playedMoveUci}`}
-                onClick={() => setSelectedIndex(index)}
+                onClick={() => {
+                  setRetryAnswerVisible(false);
+                  setSelectedIndex(index);
+                }}
                 type="button"
               >
                 <strong>{move.ply}</strong>
@@ -999,12 +1210,139 @@ function LatestGameAutoReviewPanel({
         </>
       ) : (
         <section className="analysis-placeholder-panel">
-          <h3>{reviewRunning ? "Review running" : "No reviewed moves yet"}</h3>
+          <h3>{reviewRunning ? "Review running" : retryMode ? "No retry moves in this filter" : "No reviewed moves yet"}</h3>
           <p className="helper-text">
             {reviewRunning
               ? "Stockfish is preparing the first analyzed move."
-              : "The latest game PGN did not produce reviewed moves."}
+              : retryMode
+                ? "Switch review-as filters or leave retry mode to see the full game."
+                : "The selected game PGN did not produce reviewed moves."}
           </p>
+        </section>
+      )}
+    </section>
+  );
+}
+
+type ReviewTimeFilter = PersonalChessTimeClass | "all";
+type ReviewResultFilter = "all" | PersonalChessOutcome;
+type ReviewRatedFilter = "all" | "rated" | "unrated";
+
+function IndividualGameReviewShell({
+  analysisSettings,
+  games,
+  onSelectGame,
+  selectedGameUrl,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  games: PersonalChessGame[];
+  onSelectGame: (gameUrl: string) => void;
+  selectedGameUrl: string | null;
+}) {
+  const [timeFilter, setTimeFilter] = useState<ReviewTimeFilter>("all");
+  const [resultFilter, setResultFilter] = useState<ReviewResultFilter>("all");
+  const [ratedFilter, setRatedFilter] = useState<ReviewRatedFilter>("all");
+  const [dateFilter, setDateFilter] = useState("");
+  const [opponentFilter, setOpponentFilter] = useState("");
+  const filteredReviewGames = useMemo(() => {
+    const opponent = opponentFilter.trim().toLowerCase();
+    return [...games]
+      .filter((game) => timeFilter === "all" || game.timeClass === timeFilter)
+      .filter((game) => resultFilter === "all" || game.normalizedResult === resultFilter)
+      .filter((game) => ratedFilter === "all" || (ratedFilter === "rated" ? game.rated : !game.rated))
+      .filter((game) => !dateFilter || game.endDate === dateFilter)
+      .filter((game) => !opponent || game.opponentUsername.toLowerCase().includes(opponent))
+      .sort((left, right) => right.endTimestamp - left.endTimestamp);
+  }, [dateFilter, games, opponentFilter, ratedFilter, resultFilter, timeFilter]);
+  const selectedGame =
+    filteredReviewGames.find((game) => game.gameUrl === selectedGameUrl) ??
+    filteredReviewGames[0] ??
+    games.find((game) => game.gameUrl === selectedGameUrl) ??
+    null;
+
+  useEffect(() => {
+    if (selectedGame && selectedGame.gameUrl !== selectedGameUrl) {
+      onSelectGame(selectedGame.gameUrl);
+    }
+  }, [onSelectGame, selectedGame, selectedGameUrl]);
+
+  return (
+    <section className="individual-review-shell" aria-label="Account game review picker">
+      <div className="individual-review-picker">
+        <div className="analysis-section-heading">
+          <p className="eyebrow">Account games</p>
+          <h3>Choose a game to review</h3>
+        </div>
+        <div className="individual-review-filter-grid">
+          <label className="field">
+            <span>Time</span>
+            <select value={timeFilter} onChange={(event) => setTimeFilter(event.target.value as ReviewTimeFilter)}>
+              <option value="all">All</option>
+              {personalTimeClasses.map((timeClass) => (
+                <option key={timeClass} value={timeClass}>
+                  {personalTimeControlLabel(timeClass)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Result</span>
+            <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value as ReviewResultFilter)}>
+              <option value="all">All</option>
+              <option value="win">Wins</option>
+              <option value="loss">Losses</option>
+              <option value="draw">Draws</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Rated</span>
+            <select value={ratedFilter} onChange={(event) => setRatedFilter(event.target.value as ReviewRatedFilter)}>
+              <option value="all">All</option>
+              <option value="rated">Rated</option>
+              <option value="unrated">Unrated</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Date</span>
+            <input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Opponent</span>
+            <input value={opponentFilter} onChange={(event) => setOpponentFilter(event.target.value)} placeholder="Search opponent" />
+          </label>
+        </div>
+        <div className="individual-game-picker-list">
+          {filteredReviewGames.slice(0, 80).map((game) => (
+            <button
+              aria-pressed={selectedGame?.gameUrl === game.gameUrl}
+              className={`individual-game-picker-row ${selectedGame?.gameUrl === game.gameUrl ? "selected" : ""}`}
+              key={game.gameUrl}
+              onClick={() => onSelectGame(game.gameUrl)}
+              type="button"
+            >
+              <span>
+                <strong>{formatDateLabel(game.endDate)} {formatGameTime(game.endTimestamp)}</strong>
+                {personalTimeControlLabel(game.timeClass)} as {sideLabel(game.playerColor)}
+              </span>
+              <span>
+                {personalGameResultLabel(game)} vs {game.opponentUsername}
+                {game.opponentRating ? ` (${game.opponentRating})` : ""}
+              </span>
+              <span>{game.rated ? "Rated" : "Unrated"} {formatRating(game.playerRatingAfterGame)}</span>
+            </button>
+          ))}
+          {filteredReviewGames.length === 0 ? (
+            <p className="helper-text">No imported games match the current individual review filters.</p>
+          ) : null}
+        </div>
+      </div>
+      {selectedGame ? (
+        <IndividualGameReviewPanel analysisSettings={analysisSettings} game={selectedGame} />
+      ) : (
+        <section className="analysis-placeholder-panel">
+          <h3>No game selected</h3>
+          <p className="helper-text">Sync or load account games, then select an individual game to review.</p>
         </section>
       )}
     </section>
@@ -3004,6 +3342,7 @@ function SelectedDayReview({
   onAnalysisReport,
   onAnalysisStatusChange,
   onDateChange,
+  onIndividualGameSelect,
   onUseAnalysisInWeeklyReport,
   onViewChange,
   playerLevel,
@@ -3018,6 +3357,7 @@ function SelectedDayReview({
   onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
   onAnalysisStatusChange: () => void;
   onDateChange: (date: string) => void;
+  onIndividualGameSelect: (gameUrl: string) => void;
   onUseAnalysisInWeeklyReport: (report: DailyEngineAnalysisReport, date: string) => void;
   onViewChange: (view: AnalysisView) => void;
   playerLevel: PlayerLevel;
@@ -3215,7 +3555,16 @@ function SelectedDayReview({
           </label>
           <label className="field">
             <span>Game scope</span>
-            <select value={selectedGameUrl} onChange={(event) => setSelectedGameUrl(event.target.value)} disabled={analysisRunning}>
+            <select
+              value={selectedGameUrl}
+              onChange={(event) => {
+                setSelectedGameUrl(event.target.value);
+                if (event.target.value !== "all") {
+                  onIndividualGameSelect(event.target.value);
+                }
+              }}
+              disabled={analysisRunning}
+            >
               <option value="all">Selected date: {day.games.length} game(s)</option>
               {day.games.map((game) => (
                 <option key={game.gameUrl} value={game.gameUrl}>
@@ -3304,7 +3653,10 @@ function SelectedDayReview({
                 aria-pressed={selectedGameUrl === game.gameUrl}
                 className={`chess-game-row ${selectedGameUrl === game.gameUrl ? "selected" : ""}`}
                 key={game.gameUrl}
-                onClick={() => setSelectedGameUrl(game.gameUrl)}
+                onClick={() => {
+                  setSelectedGameUrl(game.gameUrl);
+                  onIndividualGameSelect(game.gameUrl);
+                }}
                 type="button"
               >
                 <span>
@@ -3418,6 +3770,7 @@ export function ChessComAnalysisPanel() {
   const [analysisSettings, setAnalysisSettings] = useState<SelectedDayAnalysisSettings>(defaultSelectedDayAnalysisSettings);
   const [activeView, setActiveView] = useState<AnalysisView>("personal");
   const [selectedAnalysisReport, setSelectedAnalysisReport] = useState<DailyEngineAnalysisReport | null>(null);
+  const [selectedIndividualGameUrl, setSelectedIndividualGameUrl] = useState<string | null>(null);
   const personalEngineRef = useRef<ChessStockfishEngine | null>(null);
   const personalAbortControllerRef = useRef<AbortController | null>(null);
 
@@ -3496,8 +3849,6 @@ export function ChessComAnalysisPanel() {
       }),
     [personalDrillReviews, personalGames, personalMistakes],
   );
-  const latestPersonalGame = useMemo(() => personalGames.at(-1) ?? null, [personalGames]);
-
   const bumpAnalysisRevision = useCallback(() => {
     setAnalysisRevision((revision) => revision + 1);
   }, []);
@@ -3535,6 +3886,9 @@ export function ChessComAnalysisPanel() {
       const normalizedGames = personalGamesToNormalized(storedGames);
       setGames(normalizedGames);
       setLoadedUsername(storedMeta?.username ?? username.trim());
+      setSelectedIndividualGameUrl((currentUrl) =>
+        currentUrl && storedGames.some((game) => game.gameUrl === currentUrl) ? currentUrl : storedGames.at(-1)?.gameUrl ?? null,
+      );
       setSelectedDate(
         normalizedGames.filter((game) => game.timeClass === selectedTimeClass).at(-1)?.endDate ??
           normalizedGames.at(-1)?.endDate ??
@@ -3620,6 +3974,7 @@ export function ChessComAnalysisPanel() {
       setPersonalSyncMeta(syncMeta);
       setPersonalImportResult(importResult);
       setGames(normalizedStoredGames);
+      setSelectedIndividualGameUrl(storedGames.at(-1)?.gameUrl ?? null);
       setArchiveCount(response.archiveUrls.length);
       setLoadedUsername(trimmedUsername);
       setSelectedDate(
@@ -3751,6 +4106,7 @@ export function ChessComAnalysisPanel() {
       setPersonalImportResult(personalImport);
       setArchiveCount(response.archiveUrls.length);
       setGames(normalizedGames);
+      setSelectedIndividualGameUrl(storedPersonalGames.at(-1)?.gameUrl ?? null);
       setLoadedUsername(trimmedUsername);
       setSelectedDate(normalizedGames.filter((game) => game.timeClass === selectedTimeClass).at(-1)?.endDate ?? normalizedGames.at(-1)?.endDate ?? null);
       setAnalysisRevision((revision) => revision + 1);
@@ -3823,8 +4179,13 @@ export function ChessComAnalysisPanel() {
             <span>{archiveCount} monthly archives checked this run</span>
           </div>
       ) : null}
-      {latestPersonalGame ? (
-        <LatestGameAutoReviewPanel analysisSettings={analysisSettings} game={latestPersonalGame} />
+      {personalGames.length > 0 ? (
+        <IndividualGameReviewShell
+          analysisSettings={analysisSettings}
+          games={personalGames}
+          onSelectGame={setSelectedIndividualGameUrl}
+          selectedGameUrl={selectedIndividualGameUrl}
+        />
       ) : null}
       {games.length > 0 ? (
         <>
@@ -3954,6 +4315,7 @@ export function ChessComAnalysisPanel() {
             onAnalysisReport={handleAnalysisReport}
             onAnalysisStatusChange={bumpAnalysisRevision}
             onDateChange={setSelectedDate}
+            onIndividualGameSelect={setSelectedIndividualGameUrl}
             onUseAnalysisInWeeklyReport={handleUseAnalysisInWeeklyReport}
             onViewChange={setActiveView}
             playerLevel={playerLevel}
