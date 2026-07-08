@@ -168,7 +168,11 @@ export function ChessBoardPreview({
             className={`trainer-board-square ${(rowIndex + colIndex) % 2 === 0 ? "light" : "dark"}`}
             key={`${rowIndex}-${colIndex}`}
           >
-            {piece ? previewGlyphs[piece] : ""}
+            {piece ? (
+              <span className={`trainer-board-piece ${piece === piece.toUpperCase() ? "piece-white" : "piece-black"}`}>
+                {previewGlyphs[piece]}
+              </span>
+            ) : null}
           </span>
         )),
       )}

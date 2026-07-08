@@ -4185,7 +4185,7 @@ function OverviewDashboardPage({
             title={latest ? `${personalGameResultLabel(latest)} vs ${latest.opponentUsername}` : "Review Recent Game"}
           >
             <div className="trainer-recent-game-card">
-              <div>
+              <div className="trainer-recent-game-copy">
                 <span>{latest ? `${personalTimeControlLabel(latest.timeClass)} · ${formatDateLabel(latest.endDate)}` : "No game imported yet"}</span>
                 <strong className={`rating-delta ${latest ? ratingDeltaClass(latest.ratingChange) : "neutral"}`}>
                   {latest ? formatNetChange(latest.ratingChange) : "n/a"}

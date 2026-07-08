@@ -6034,18 +6034,20 @@ h3 {
   align-items: center;
 }
 
-.trainer-recent-game-card > div {
+.trainer-recent-game-copy {
   display: grid;
   gap: 8px;
 }
 
 .trainer-board-preview {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  width: 96px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  gap: 0;
+  width: 112px;
   aspect-ratio: 1;
   overflow: hidden;
-  border: 4px solid #eef4ff;
+  border: 3px solid #eef4ff;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: inset 0 0 0 1px #dbe7ff;
@@ -6053,11 +6055,10 @@ h3 {
 
 .trainer-board-square {
   display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   place-items: center;
-  color: #111827;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 0.76rem;
-  line-height: 1;
 }
 
 .trainer-board-square.light {
@@ -6066,6 +6067,27 @@ h3 {
 
 .trainer-board-square.dark {
   background: #7aa9f2;
+}
+
+.trainer-board-piece {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: #111827;
+  font-family: "Apple Symbols", "Segoe UI Symbol", "Noto Sans Symbols 2", Georgia, serif;
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+.trainer-board-piece.piece-white {
+  color: #ffffff;
+  -webkit-text-stroke: 0.45px #0f172a;
+  text-shadow: 0 1px 0 rgba(15, 23, 42, 0.72);
+}
+
+.trainer-board-piece.piece-black {
+  color: #0f172a;
 }
 
 .trainer-focus-list {
