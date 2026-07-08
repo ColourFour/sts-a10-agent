@@ -150,6 +150,7 @@ describe("individual game review panel", () => {
     cacheReview(newerGame);
 
     render(<ChessComAnalysisPanel />);
+    await user.click(screen.getByRole("button", { name: /Analysis/i }));
 
     expect(await screen.findByRole("heading", { name: /Win vs NewerOpponent/i })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /OlderOpponent/i }));

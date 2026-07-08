@@ -5484,3 +5484,1070 @@ h3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Chess trainer dashboard migration, 2026-07-08. */
+.chess-analysis-panel {
+  --trainer-bg: #f6f8fc;
+  --trainer-surface: #ffffff;
+  --trainer-surface-soft: #f9fbff;
+  --trainer-border: #e5eaf3;
+  --trainer-border-strong: #cbd7eb;
+  --trainer-text: #111827;
+  --trainer-muted: #667085;
+  --trainer-subtle: #98a2b3;
+  --trainer-blue: #1769e8;
+  --trainer-blue-soft: #eaf2ff;
+  --trainer-green: #17a56b;
+  --trainer-red: #e04747;
+  --trainer-yellow: #c98913;
+  --text: var(--trainer-text);
+  --muted: var(--trainer-muted);
+  --subtle: var(--trainer-subtle);
+  --gold: var(--trainer-blue);
+  --blue: var(--trainer-blue);
+  display: block;
+  min-width: 0;
+  min-height: 100vh;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--trainer-text);
+  background: var(--trainer-bg);
+  box-shadow: none;
+}
+
+.chess-analysis-panel *,
+.chess-analysis-panel *::before,
+.chess-analysis-panel *::after {
+  letter-spacing: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.trainer-shell {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  min-height: 100vh;
+  background:
+    linear-gradient(90deg, #ffffff 0 244px, transparent 244px),
+    var(--trainer-bg);
+}
+
+.trainer-sidebar {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 28px 20px;
+  border-right: 1px solid var(--trainer-border);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.trainer-back-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 32px;
+  color: var(--trainer-muted);
+  font-size: 0.84rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.trainer-back-link:hover {
+  color: var(--trainer-blue);
+  text-decoration: underline;
+}
+
+.trainer-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--trainer-text);
+  font-size: 0.82rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.trainer-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  color: #ffffff;
+  background: var(--trainer-blue);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.trainer-nav {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.trainer-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #475467;
+  background: transparent;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trainer-nav button.selected,
+.trainer-nav button:hover {
+  color: var(--trainer-blue);
+  border-color: #dbe7ff;
+  background: var(--trainer-blue-soft);
+}
+
+.trainer-sidebar-profile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding-top: 18px;
+  border-top: 1px solid var(--trainer-border);
+}
+
+.trainer-sidebar-profile > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  color: var(--trainer-blue);
+  background: var(--trainer-blue-soft);
+  font-weight: 950;
+}
+
+.trainer-sidebar-profile div {
+  display: grid;
+  min-width: 0;
+}
+
+.trainer-sidebar-profile strong,
+.trainer-sidebar-profile small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trainer-sidebar-profile strong {
+  color: var(--trainer-text);
+  font-size: 0.86rem;
+}
+
+.trainer-sidebar-profile small {
+  color: var(--trainer-muted);
+  font-size: 0.76rem;
+}
+
+.trainer-main {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-width: 0;
+  padding: 32px;
+}
+
+.trainer-page {
+  display: grid;
+  gap: 26px;
+  width: min(1180px, 100%);
+  min-width: 0;
+}
+
+.trainer-mobile-title {
+  display: none;
+}
+
+.trainer-page-header,
+.trainer-page-heading {
+  display: flex;
+  gap: 18px;
+  align-items: start;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.trainer-page-heading {
+  display: grid;
+  justify-content: stretch;
+}
+
+.trainer-current-section {
+  color: var(--trainer-blue);
+  font-size: 0.78rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.trainer-page h1,
+.trainer-page-header h1 {
+  max-width: none;
+  color: var(--trainer-text);
+  font-size: 2.35rem;
+  line-height: 1.08;
+}
+
+.trainer-page h2 {
+  color: var(--trainer-text);
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.trainer-page p,
+.trainer-page-header p {
+  color: var(--trainer-muted);
+  line-height: 1.5;
+}
+
+.trainer-header-actions,
+.trainer-filter-row,
+.trainer-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.trainer-username-field {
+  display: grid;
+  gap: 4px;
+  min-width: min(100%, 220px);
+}
+
+.trainer-username-field span,
+.chess-analysis-panel .field span {
+  color: var(--trainer-muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.trainer-rating-pill,
+.trainer-data-strip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--trainer-border);
+  border-radius: 999px;
+  color: var(--trainer-text);
+  background: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.trainer-rating-pill {
+  color: var(--trainer-blue);
+  border-color: #dbe7ff;
+  background: var(--trainer-blue-soft);
+}
+
+.trainer-data-strip,
+.trainer-alert-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: min(1180px, 100%);
+  min-width: 0;
+}
+
+.trainer-alert-stack {
+  display: grid;
+}
+
+.chess-analysis-panel .secondary-button,
+.chess-analysis-panel .primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 9px 13px;
+  border: 1px solid var(--trainer-border);
+  border-radius: 8px;
+  color: var(--trainer-text);
+  background: #ffffff;
+  font-weight: 850;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  cursor: pointer;
+}
+
+.chess-analysis-panel .primary-action {
+  color: #ffffff;
+  border-color: var(--trainer-blue);
+  background: var(--trainer-blue);
+}
+
+.chess-analysis-panel .secondary-button:hover {
+  border-color: var(--trainer-border-strong);
+  background: #f8fbff;
+}
+
+.chess-analysis-panel input,
+.chess-analysis-panel select {
+  min-height: 40px;
+  border: 1px solid var(--trainer-border);
+  border-radius: 8px;
+  color: var(--trainer-text);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.trainer-stat-grid,
+.trainer-continue-grid,
+.trainer-dashboard-grid,
+.trainer-leak-detail-grid,
+.trainer-drill-category-grid,
+.trainer-progress-grid,
+.trainer-settings-grid,
+.trainer-plan-summary,
+.trainer-opening-card-grid {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.trainer-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.trainer-continue-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trainer-dashboard-grid {
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  align-items: start;
+}
+
+.trainer-leak-detail-grid,
+.trainer-drill-category-grid,
+.trainer-progress-grid,
+.trainer-settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trainer-plan-summary,
+.trainer-opening-card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trainer-section {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.trainer-section-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.trainer-section-heading p {
+  color: var(--trainer-muted);
+}
+
+.trainer-stat-card,
+.trainer-dashboard-card,
+.trainer-leak-card,
+.trainer-drill-card,
+.trainer-table-card,
+.trainer-week-card,
+.trainer-settings-card {
+  min-width: 0;
+  border: 1px solid var(--trainer-border);
+  border-radius: 8px;
+  background: var(--trainer-surface);
+  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.06);
+}
+
+.trainer-stat-card {
+  display: grid;
+  gap: 10px;
+  min-height: 116px;
+  padding: 18px;
+}
+
+.trainer-card-topline,
+.trainer-card-heading,
+.trainer-stat-footer,
+.trainer-drill-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.trainer-card-topline > span:first-child,
+.trainer-card-heading span,
+.trainer-stat-footer small,
+.trainer-drill-meta span {
+  color: var(--trainer-muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.trainer-stat-card > strong {
+  color: var(--trainer-text);
+  font-size: 1.72rem;
+  line-height: 1;
+}
+
+.trainer-stat-footer {
+  justify-content: flex-start;
+}
+
+.trainer-stat-footer em {
+  color: var(--trainer-green);
+  font-style: normal;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.trainer-card-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  color: var(--trainer-blue);
+  background: var(--trainer-blue-soft);
+}
+
+.trainer-stat-card.accent-green .trainer-card-icon {
+  color: var(--trainer-green);
+  background: #eaf8f2;
+}
+
+.trainer-stat-card.accent-yellow .trainer-card-icon {
+  color: var(--trainer-yellow);
+  background: #fff6e4;
+}
+
+.trainer-dashboard-card,
+.trainer-leak-card,
+.trainer-drill-card,
+.trainer-settings-card,
+.trainer-table-card,
+.trainer-week-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 18px;
+}
+
+.trainer-card-heading {
+  align-items: start;
+}
+
+.trainer-card-heading > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.trainer-card-heading strong,
+.trainer-dashboard-card-body strong,
+.trainer-week-row strong {
+  color: var(--trainer-text);
+  line-height: 1.25;
+}
+
+.trainer-card-heading em,
+.trainer-week-row em {
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--trainer-blue);
+  background: var(--trainer-blue-soft);
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.trainer-dashboard-card-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trainer-text-action,
+.trainer-start-button {
+  width: fit-content;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid #dbe7ff;
+  border-radius: 8px;
+  color: var(--trainer-blue);
+  background: var(--trainer-blue-soft);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.trainer-start-button {
+  color: #ffffff;
+  border-color: var(--trainer-blue);
+  background: var(--trainer-blue);
+}
+
+.trainer-recent-game-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 14px;
+  align-items: center;
+}
+
+.trainer-recent-game-card > div {
+  display: grid;
+  gap: 8px;
+}
+
+.trainer-board-preview {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: 96px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 4px solid #eef4ff;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #dbe7ff;
+}
+
+.trainer-board-square {
+  display: grid;
+  place-items: center;
+  color: #111827;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.76rem;
+  line-height: 1;
+}
+
+.trainer-board-square.light {
+  background: #eff5ff;
+}
+
+.trainer-board-square.dark {
+  background: #7aa9f2;
+}
+
+.trainer-focus-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trainer-leak-card {
+  box-shadow: none;
+}
+
+.trainer-leak-card ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--trainer-muted);
+  font-size: 0.9rem;
+}
+
+.trainer-impact-copy {
+  margin: 0;
+  color: var(--trainer-text);
+  font-weight: 850;
+}
+
+.trainer-leak-card.severity-critical {
+  border-color: #ffd0d0;
+  background: #fffafa;
+}
+
+.trainer-leak-card.severity-critical .trainer-card-heading em {
+  color: var(--trainer-red);
+  background: #fff0f0;
+}
+
+.trainer-leak-card.severity-high .trainer-card-heading em {
+  color: var(--trainer-yellow);
+  background: #fff6e4;
+}
+
+.trainer-leak-card.severity-low .trainer-card-heading em {
+  color: var(--trainer-green);
+  background: #eaf8f2;
+}
+
+.trainer-activity-timeline {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--trainer-border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.06);
+  list-style: none;
+}
+
+.trainer-activity-timeline li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.trainer-activity-timeline li > span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  color: var(--trainer-green);
+  background: #eaf8f2;
+  font-weight: 950;
+}
+
+.trainer-activity-timeline li.tone-warning > span {
+  color: var(--trainer-yellow);
+  background: #fff6e4;
+}
+
+.trainer-activity-timeline strong,
+.trainer-activity-timeline small {
+  display: block;
+  min-width: 0;
+}
+
+.trainer-activity-timeline strong {
+  color: var(--trainer-text);
+  font-size: 0.9rem;
+}
+
+.trainer-activity-timeline small {
+  margin-top: 2px;
+  color: var(--trainer-muted);
+  font-size: 0.8rem;
+}
+
+.trainer-table-card {
+  gap: 16px;
+}
+
+.trainer-filter-row {
+  justify-content: flex-start;
+}
+
+.trainer-filter-row .field {
+  min-width: min(100%, 220px);
+}
+
+.trainer-games-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.trainer-games-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.trainer-games-table th,
+.trainer-games-table td {
+  padding: 13px 12px;
+  border-bottom: 1px solid var(--trainer-border);
+  color: var(--trainer-muted);
+  font-size: 0.92rem;
+  text-align: left;
+}
+
+.trainer-games-table th {
+  color: #475467;
+  font-size: 0.76rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.trainer-games-table tr:hover td {
+  background: #f9fbff;
+}
+
+.trainer-progress-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf2fa;
+}
+
+.trainer-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--trainer-blue), #17a56b);
+}
+
+.trainer-week-card {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.trainer-week-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 14px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--trainer-border);
+  color: var(--trainer-muted);
+  background: #ffffff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trainer-week-row:last-child {
+  border-bottom: 0;
+}
+
+.trainer-week-row:hover {
+  background: #f9fbff;
+}
+
+.trainer-week-row > span {
+  color: var(--trainer-blue);
+  font-size: 0.84rem;
+  font-weight: 950;
+}
+
+.trainer-progress-chart svg {
+  display: block;
+  width: 100%;
+  height: 170px;
+}
+
+.trainer-progress-chart path {
+  fill: none;
+  stroke: #edf2fa;
+  stroke-width: 1.2;
+}
+
+.trainer-progress-chart polyline {
+  fill: none;
+  stroke: var(--trainer-blue);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.trainer-mistake-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.trainer-mistake-bars span {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.trainer-mistake-bars strong,
+.trainer-mistake-bars small {
+  color: var(--trainer-muted);
+  font-size: 0.82rem;
+}
+
+.trainer-mistake-bars em {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--trainer-blue);
+}
+
+.trainer-settings-card.wide {
+  grid-column: 1 / -1;
+}
+
+.trainer-advanced-details {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid var(--trainer-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.trainer-advanced-details summary {
+  padding: 14px 18px;
+  color: var(--trainer-text);
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.trainer-advanced-details > :not(summary) {
+  margin: 0 18px 18px;
+}
+
+.chess-analysis-panel :is(
+  .individual-review-picker,
+  .individual-game-review-panel,
+  .personal-drill-bank,
+  .personal-drill-card,
+  .analysis-placeholder-panel,
+  .focused-review-card,
+  .rating-graph-panel,
+  .daily-report-panel,
+  .weekly-report-panel,
+  .weekly-analysis-queue,
+  .weekly-insight-grid article,
+  .weekly-summary-card,
+  .analysis-context-card,
+  .chess-daily-review,
+  .coach-status-row span,
+  .coach-flow-grid article,
+  .top-move-panel,
+  .individual-review-metric,
+  .individual-review-lines,
+  .individual-retry-panel,
+  .engine-detail-box,
+  .move-detail-grid div,
+  .due-repair-panel,
+  .personal-sync-panel,
+  .personal-focus-panel,
+  .personal-session-panel,
+  .personal-stat-card,
+  .personal-time-summary-card,
+  .personal-output-grid article,
+  .personal-color-grid article,
+  .personal-leak-grid article,
+  .personal-rule-grid article
+) {
+  border-color: var(--trainer-border);
+  color: var(--trainer-text);
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(16, 24, 40, 0.04);
+}
+
+.chess-analysis-panel :is(.individual-game-picker-row, .chess-game-row, .weekly-analysis-status-row, .chess-analysis-time-card) {
+  border-color: var(--trainer-border);
+  color: var(--trainer-muted);
+  background: var(--trainer-surface-soft);
+}
+
+.chess-analysis-panel :is(.individual-game-picker-row.selected, .individual-game-picker-row:hover, .chess-game-row.selected, .chess-game-row:hover) {
+  border-color: #cbdcff;
+  color: var(--trainer-text);
+  background: var(--trainer-blue-soft);
+}
+
+.chess-analysis-panel .coach-explanation {
+  color: #155b40;
+  border-color: #caeadb;
+  background: #effaf5;
+}
+
+.chess-analysis-panel .analysis-settings-grid {
+  border-color: var(--trainer-border);
+  background: var(--trainer-surface-soft);
+}
+
+.chess-analysis-panel .analysis-settings-drawer {
+  border-color: var(--trainer-border);
+  background: #ffffff;
+}
+
+.chess-analysis-panel .fen-board {
+  border-color: #dbe7ff;
+  box-shadow: 0 14px 28px rgba(23, 105, 232, 0.12);
+}
+
+.chess-analysis-panel .fen-square.light {
+  background: #eff5ff;
+}
+
+.chess-analysis-panel .fen-square.dark {
+  background: #6fa1ee;
+}
+
+.chess-analysis-panel .helper-text {
+  color: var(--trainer-muted);
+}
+
+.chess-analysis-panel .eyebrow,
+.chess-analysis-panel .analysis-section-heading .eyebrow,
+.chess-analysis-panel .weekly-summary-card h3,
+.chess-analysis-panel .chess-analysis-time-card h4,
+.chess-analysis-panel .individual-review-lines h4,
+.chess-analysis-panel .top-move-panel h4 {
+  color: var(--trainer-blue);
+}
+
+.chess-analysis-panel .status-tag {
+  color: var(--trainer-blue);
+  border-color: #dbe7ff;
+  background: var(--trainer-blue-soft);
+}
+
+.chess-analysis-panel .error-text {
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ffd0d0;
+  border-radius: 8px;
+  color: #b42318;
+  background: #fff6f6;
+}
+
+@media (max-width: 1120px) {
+  .trainer-stat-grid,
+  .trainer-continue-grid,
+  .trainer-dashboard-grid,
+  .trainer-leak-detail-grid,
+  .trainer-drill-category-grid,
+  .trainer-progress-grid,
+  .trainer-settings-grid,
+  .trainer-plan-summary,
+  .trainer-opening-card-grid,
+  .trainer-focus-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .trainer-dashboard-grid {
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 860px) {
+  .trainer-shell {
+    grid-template-columns: 1fr;
+    background: var(--trainer-bg);
+  }
+
+  .trainer-sidebar {
+    position: static;
+    min-height: auto;
+    padding: 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--trainer-border);
+  }
+
+  .trainer-brand,
+  .trainer-sidebar-profile {
+    display: none;
+  }
+
+  .trainer-nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+  }
+
+  .trainer-nav button {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .trainer-main {
+    padding: 18px;
+  }
+
+  .trainer-mobile-title {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--trainer-text);
+  }
+
+  .trainer-mobile-title span {
+    color: var(--trainer-blue);
+    font-weight: 850;
+  }
+
+  .trainer-page-header {
+    display: grid;
+  }
+
+  .trainer-header-actions {
+    justify-content: flex-start;
+  }
+
+  .trainer-page h1,
+  .trainer-page-header h1 {
+    font-size: 1.95rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .trainer-main {
+    padding: 14px;
+  }
+
+  .trainer-page {
+    gap: 18px;
+  }
+
+  .trainer-stat-grid,
+  .trainer-continue-grid,
+  .trainer-dashboard-grid,
+  .trainer-leak-detail-grid,
+  .trainer-drill-category-grid,
+  .trainer-progress-grid,
+  .trainer-settings-grid,
+  .trainer-plan-summary,
+  .trainer-opening-card-grid,
+  .trainer-focus-list {
+    grid-template-columns: 1fr;
+  }
+
+  .trainer-recent-game-card,
+  .trainer-week-row,
+  .trainer-mistake-bars span {
+    grid-template-columns: 1fr;
+  }
+
+  .trainer-board-preview {
+    width: 120px;
+  }
+
+  .trainer-page h1,
+  .trainer-page-header h1 {
+    font-size: 1.65rem;
+  }
+}

@@ -1,6 +1,41 @@
 import { Chess, type Square as ChessSquare } from "chess.js";
-import { Brain, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Repeat2, Search, Square, XCircle } from "lucide-react";
+import {
+  BarChart3,
+  Brain,
+  CalendarDays,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Download,
+  Dumbbell,
+  Eye,
+  FileSearch,
+  FolderOpen,
+  Home,
+  LineChart,
+  ListChecks,
+  RefreshCw,
+  Repeat2,
+  Search,
+  Settings,
+  Square,
+  Target,
+  UploadCloud,
+  XCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import {
+  ActivityTimeline,
+  ChessBoardPreview,
+  DashboardCard,
+  DrillCard,
+  LeakCard,
+  NavigationSidebar,
+  ProgressChart,
+  StatCard,
+  type ChessDashboardNavItem,
+} from "../../../components/chess";
 import {
   fetchRecentChessComGames,
   readLastChessComUsername,
@@ -44,6 +79,7 @@ import { fetchPersonalChessComHistory, type PersonalChessSyncProgress, type Pers
 import type {
   PersonalChessGame,
   PersonalChessImportResult,
+  PersonalChessLeakTag,
   PersonalChessMistake,
   PersonalChessOutcome,
   PersonalChessSyncMeta,
@@ -99,6 +135,55 @@ const analysisViews: { id: AnalysisView; labels: Record<PlayerLevel, string> }[]
   { id: "homework", labels: { advanced: "Homework", beginner: "Practice", intermediate: "Homework" } },
   { id: "weekly", labels: { advanced: "Weekly Report", beginner: "Weekly Plan", intermediate: "Weekly Report" } },
 ];
+type TrainerPage = "analysis" | "drills" | "games" | "leaks" | "overview" | "plan" | "progress" | "settings";
+
+const trainerPagePaths: Record<TrainerPage, string> = {
+  analysis: "analysis",
+  drills: "drills",
+  games: "games",
+  leaks: "leaks",
+  overview: "",
+  plan: "training-plan",
+  progress: "progress",
+  settings: "settings",
+};
+
+const trainerPageTitles: Record<TrainerPage, string> = {
+  analysis: "Analysis",
+  drills: "Drill Library",
+  games: "Games",
+  leaks: "Personal Leaks",
+  overview: "Overview",
+  plan: "Training Plan",
+  progress: "Progress",
+  settings: "Settings",
+};
+
+const trainerNavItems: ChessDashboardNavItem<TrainerPage>[] = [
+  { id: "overview", icon: <Home size={18} aria-hidden="true" />, label: "Overview" },
+  { id: "games", icon: <FolderOpen size={18} aria-hidden="true" />, label: "Games" },
+  { id: "analysis", icon: <FileSearch size={18} aria-hidden="true" />, label: "Analysis" },
+  { id: "leaks", icon: <Target size={18} aria-hidden="true" />, label: "Leaks" },
+  { id: "drills", icon: <Dumbbell size={18} aria-hidden="true" />, label: "Drills" },
+  { id: "plan", icon: <CalendarDays size={18} aria-hidden="true" />, label: "Training Plan" },
+  { id: "progress", icon: <LineChart size={18} aria-hidden="true" />, label: "Progress" },
+  { id: "settings", icon: <Settings size={18} aria-hidden="true" />, label: "Settings" },
+];
+
+function trainerPageFromHash(hash: string): TrainerPage {
+  const route = hash.replace(/^#/, "") || "/applets/chess-com-analysis";
+  const normalizedRoute = route.startsWith("/") ? route : `/${route}`;
+  const base = normalizedRoute.startsWith("/applets/chess/analysis") ? "/applets/chess/analysis" : "/applets/chess-com-analysis";
+  const suffix = normalizedRoute.startsWith(base) ? normalizedRoute.slice(base.length).replace(/^\/+/, "") : "";
+  const page = (Object.entries(trainerPagePaths).find(([, path]) => path === suffix)?.[0] ?? "overview") as TrainerPage;
+  return page;
+}
+
+function trainerRouteForPage(page: TrainerPage): string {
+  const suffix = trainerPagePaths[page];
+  return suffix ? `/applets/chess-com-analysis/${suffix}` : "/applets/chess-com-analysis";
+}
+
 const boardFiles = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const fenPieceGlyphs: Record<string, string> = {
   B: "♗",
@@ -3808,6 +3893,949 @@ function SelectedDayReview({
   );
 }
 
+function latestGame(games: PersonalChessGame[]): PersonalChessGame | null {
+  return [...games].sort((left, right) => right.endTimestamp - left.endTimestamp)[0] ?? null;
+}
+
+function drillCompletion(report: PersonalChessReport): { completed: number; percent: number; total: number } {
+  const total = report.drillQueue.length;
+  const completed = report.drillQueue.filter((drill) => drill.status === "solved").length;
+  return {
+    completed,
+    percent: total > 0 ? Math.round((completed / total) * 100) : 0,
+    total,
+  };
+}
+
+function countMistakesByTags(mistakes: PersonalChessMistake[], tags: PersonalChessLeakTag[]): number {
+  const tagSet = new Set(tags);
+  return mistakes.filter((mistake) => tagSet.has(mistake.leakTag)).length;
+}
+
+function severityForCount(count: number): "Critical" | "High" | "Low" | "Medium" {
+  if (count >= 8) {
+    return "Critical";
+  }
+
+  if (count >= 4) {
+    return "High";
+  }
+
+  if (count >= 1) {
+    return "Medium";
+  }
+
+  return "Low";
+}
+
+function buildFocusAreas(report: PersonalChessReport, mistakes: PersonalChessMistake[]) {
+  const tacticalCount = countMistakesByTags(mistakes, ["hung-piece", "ignored-threat", "missed-tactic"]);
+  const endgameCount = countMistakesByTags(mistakes, ["conversion-failure", "endgame-technique"]);
+  const timeCount = countMistakesByTags(mistakes, ["time-pressure", "tilt-game"]) + report.leakReport.timeouts.length;
+  const openingProblem = report.openingLeakTable.find((opening) => opening.recommendation !== "Keep");
+  const openingSeverity =
+    openingProblem?.recommendation === "Quarantine"
+      ? "Critical"
+      : openingProblem?.recommendation === "Repair"
+        ? "High"
+        : report.openingLeakTable.length > 0
+          ? "Medium"
+          : "Low";
+
+  return [
+    {
+      impact: tacticalCount > 0 ? `${tacticalCount} saved mistake(s)` : "No saved tactical mistake yet",
+      patterns: ["missed forks", "hanging pieces", "failed calculations"],
+      severity: severityForCount(tacticalCount),
+      summary:
+        tacticalCount > 0
+          ? "Blake is missing tactical shots in reviewed positions."
+          : "Run rapid-loss analysis to find tactical repair positions.",
+      title: "Tactical Awareness",
+    },
+    {
+      impact: openingProblem ? `${openingProblem.scorePercent}% score in ${openingProblem.eco}` : `${report.openingLeakTable.length} tracked opening(s)`,
+      patterns: ["early plan drift", "repeated opening losses", "short losses"],
+      severity: openingSeverity as "Critical" | "High" | "Low" | "Medium",
+      summary: openingProblem
+        ? `${openingProblem.eco} ${openingProblem.opening} needs repair.`
+        : "Opening data is stable or not deep enough yet.",
+      title: "Opening Principles",
+    },
+    {
+      impact: endgameCount > 0 ? `${endgameCount} endgame drill source(s)` : "No repeated endgame leak yet",
+      patterns: ["conversion failures", "late calculation", "technical endings"],
+      severity: severityForCount(endgameCount),
+      summary:
+        endgameCount > 0
+          ? "Late-game mistakes are turning advantages into harder positions."
+          : "Endgame technique will populate from analyzed losses.",
+      title: "Endgame Technique",
+    },
+    {
+      impact: timeCount > 0 ? `${timeCount} time-pressure signal(s)` : "Session rules currently enough",
+      patterns: ["timeouts", "post-loss games", "fast-game spillover"],
+      severity: severityForCount(timeCount),
+      summary:
+        timeCount > 0
+          ? "Time pressure and session flow are affecting decisions."
+          : "Keep the current session guardrails in place.",
+      title: "Time Management",
+    },
+  ];
+}
+
+function buildActivityItems({
+  activeReviewReport,
+  latest,
+  report,
+}: {
+  activeReviewReport: DailyEngineAnalysisReport | null;
+  latest: PersonalChessGame | null;
+  report: PersonalChessReport;
+}) {
+  const items = [];
+
+  if (latest) {
+    items.push({
+      detail: `${personalGameResultLabel(latest)} · ${formatDateLabel(latest.endDate)}`,
+      label: `Imported game vs ${latest.opponentUsername}`,
+      tone: latest.normalizedResult === "win" ? "good" : latest.normalizedResult === "loss" ? "warning" : "neutral",
+    } as const);
+  }
+
+  if (activeReviewReport) {
+    items.push({
+      detail: `${activeReviewReport.criticalMoves.length} review card(s), ${activeReviewReport.homeworkPuzzles.length} drill(s)`,
+      label: "Completed selected-day analysis",
+      tone: "good" as const,
+    });
+  }
+
+  if (report.dueDrillCount > 0) {
+    items.push({
+      detail: `${report.dueDrillCount} due today`,
+      label: "Personal drill queue updated",
+      tone: "warning" as const,
+    });
+  } else if (report.drillQueue.length > 0) {
+    items.push({
+      detail: `${drillCompletion(report).completed}/${report.drillQueue.length} solved`,
+      label: "Personal drill progress saved",
+      tone: "good" as const,
+    });
+  }
+
+  items.push({
+    detail: report.todaysFocus,
+    label: "Updated training focus",
+    tone: "neutral" as const,
+  });
+
+  return items.slice(0, 4);
+}
+
+function ratingTrendPoints(games: PersonalChessGame[], timeClass: PersonalChessTimeClass): number[] {
+  return games
+    .filter((game) => game.timeClass === timeClass && game.playerRatingAfterGame !== null)
+    .sort((left, right) => left.endTimestamp - right.endTimestamp)
+    .map((game) => game.playerRatingAfterGame as number)
+    .slice(-14);
+}
+
+function weekdayLabel(date: string): string {
+  return new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(new Date(`${date}T12:00:00`));
+}
+
+function TrainerHeader({
+  currentRating,
+  importLoading,
+  loadLoading,
+  onImport,
+  onLoad,
+  onUsernameChange,
+  username,
+}: {
+  currentRating: string;
+  importLoading: boolean;
+  loadLoading: boolean;
+  onImport: () => void;
+  onLoad: () => void;
+  onUsernameChange: (username: string) => void;
+  username: string;
+}) {
+  return (
+    <header className="trainer-page-header">
+      <div>
+        <span className="trainer-current-section">Blake's Chess Trainer</span>
+        <h1>Welcome back, Blake.</h1>
+        <p>Review. Repair. Improve.</p>
+      </div>
+      <div className="trainer-header-actions">
+        <span className="trainer-rating-pill">Rapid {currentRating}</span>
+        <label className="trainer-username-field">
+          <span>Chess.com username</span>
+          <input
+            autoComplete="off"
+            placeholder={blakeChessTrainerConfig.defaultUsername}
+            value={username}
+            onChange={(event) => onUsernameChange(event.target.value)}
+          />
+        </label>
+        <button className="secondary-button" disabled={importLoading} onClick={onImport} type="button">
+          <UploadCloud size={17} aria-hidden="true" />
+          {importLoading ? "Importing" : "Import games"}
+        </button>
+        <button className="secondary-button primary-action" disabled={loadLoading} onClick={onLoad} type="button">
+          <Search size={17} aria-hidden="true" />
+          {loadLoading ? "Loading" : "Load games"}
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function OverviewDashboardPage({
+  activeReviewReport,
+  importLoading,
+  loadLoading,
+  onImport,
+  onLoad,
+  onNavigate,
+  onUsernameChange,
+  personalGames,
+  personalMistakes,
+  report,
+  username,
+}: {
+  activeReviewReport: DailyEngineAnalysisReport | null;
+  importLoading: boolean;
+  loadLoading: boolean;
+  onImport: () => void;
+  onLoad: () => void;
+  onNavigate: (page: TrainerPage) => void;
+  onUsernameChange: (username: string) => void;
+  personalGames: PersonalChessGame[];
+  personalMistakes: PersonalChessMistake[];
+  report: PersonalChessReport;
+  username: string;
+}) {
+  const rapidSummary = report.timeClassSummaries.find((summary) => summary.timeClass === "rapid");
+  const latest = latestGame(personalGames);
+  const completion = drillCompletion(report);
+  const focusAreas = buildFocusAreas(report, personalMistakes);
+  const activityItems = buildActivityItems({ activeReviewReport, latest, report });
+  const highestPriority = focusAreas.find((area) => area.severity === "Critical") ?? focusAreas.find((area) => area.severity === "High") ?? focusAreas[0];
+  const currentRating = formatRating(report.currentRatings.rapid ?? rapidSummary?.currentRating ?? null);
+
+  return (
+    <div className="trainer-page trainer-overview-page">
+      <TrainerHeader
+        currentRating={currentRating}
+        importLoading={importLoading}
+        loadLoading={loadLoading}
+        onImport={onImport}
+        onLoad={onLoad}
+        onUsernameChange={onUsernameChange}
+        username={username}
+      />
+
+      <section className="trainer-stat-grid" aria-label="Training summary">
+        <StatCard
+          accent="blue"
+          helper="Rapid"
+          icon={<BarChart3 size={18} aria-hidden="true" />}
+          label="Rapid rating"
+          trend={formatNetChange(rapidSummary?.ratingChange90 ?? null)}
+          value={currentRating}
+        />
+        <StatCard
+          accent="green"
+          helper="Imported archive"
+          icon={<ClipboardList size={18} aria-hidden="true" />}
+          label="Games reviewed"
+          value={`${report.totalGames}`}
+        />
+        <StatCard
+          helper="Rapid score proxy"
+          icon={<Target size={18} aria-hidden="true" />}
+          label="Accuracy"
+          value={rapidSummary ? formatPercent(rapidSummary.scorePercent) : "n/a"}
+        />
+        <StatCard
+          accent="yellow"
+          helper="Personal queue"
+          icon={<ListChecks size={18} aria-hidden="true" />}
+          label="Drills completed"
+          value={`${completion.completed} / ${completion.total}`}
+        />
+      </section>
+
+      <section className="trainer-section">
+        <div className="trainer-section-heading">
+          <h2>Continue Training</h2>
+          <p>{report.todaysFocus}</p>
+        </div>
+        <div className="trainer-continue-grid">
+          <DashboardCard
+            actionLabel="Review game"
+            eyebrow="Recent game"
+            icon={<FileSearch size={18} aria-hidden="true" />}
+            onAction={() => onNavigate("analysis")}
+            title={latest ? `${personalGameResultLabel(latest)} vs ${latest.opponentUsername}` : "Review Recent Game"}
+          >
+            <div className="trainer-recent-game-card">
+              <div>
+                <span>{latest ? `${personalTimeControlLabel(latest.timeClass)} · ${formatDateLabel(latest.endDate)}` : "No game imported yet"}</span>
+                <strong className={`rating-delta ${latest ? ratingDeltaClass(latest.ratingChange) : "neutral"}`}>
+                  {latest ? formatNetChange(latest.ratingChange) : "n/a"}
+                </strong>
+              </div>
+              <ChessBoardPreview label="Recent game preview" orientation={latest?.playerColor ?? "white"} />
+            </div>
+          </DashboardCard>
+          <DashboardCard
+            actionLabel="Open drills"
+            eyebrow="Personal drills"
+            icon={<Dumbbell size={18} aria-hidden="true" />}
+            onAction={() => onNavigate("drills")}
+            title="Complete Personal Drills"
+          >
+            <p>{report.dueDrillCount > 0 ? `${report.dueDrillCount} unfinished drill(s) due today.` : `${report.drillQueue.length} saved personal drill(s).`}</p>
+            <strong>{highestPriority.title}</strong>
+          </DashboardCard>
+          <DashboardCard
+            actionLabel="Review plan"
+            eyebrow="Weekly plan"
+            icon={<CalendarDays size={18} aria-hidden="true" />}
+            onAction={() => onNavigate("plan")}
+            title="Review Weekly Plan"
+          >
+            <p>{completion.percent}% drill completion</p>
+            <strong>{report.sessionRules.reviewRapidLossBeforeNextRapid ? "Review rapid loss before rated rapid" : "Keep session guardrails"}</strong>
+          </DashboardCard>
+        </div>
+      </section>
+
+      <section className="trainer-dashboard-grid">
+        <div className="trainer-section">
+          <div className="trainer-section-heading">
+            <h2>Focus Areas</h2>
+            <p>Only the next coaching priorities are shown here.</p>
+          </div>
+          <div className="trainer-focus-list">
+            {focusAreas.map((area) => (
+              <LeakCard
+                actionLabel="View detail"
+                key={area.title}
+                onAction={() => onNavigate(area.title === "Opening Principles" ? "leaks" : "drills")}
+                severity={area.severity}
+                summary={area.summary}
+                title={area.title}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="trainer-section">
+          <div className="trainer-section-heading">
+            <h2>Recent Activity</h2>
+            <p>Latest training signals and saved work.</p>
+          </div>
+          <ActivityTimeline items={activityItems} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function GamesPage({
+  games,
+  onSelectGame,
+}: {
+  games: PersonalChessGame[];
+  onSelectGame: (gameUrl: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [resultFilter, setResultFilter] = useState<ReviewResultFilter>("all");
+  const [timeFilter, setTimeFilter] = useState<ReviewTimeFilter>("all");
+  const filteredGames = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return [...games]
+      .filter((game) => timeFilter === "all" || game.timeClass === timeFilter)
+      .filter((game) => resultFilter === "all" || game.normalizedResult === resultFilter)
+      .filter((game) => !normalizedQuery || game.opponentUsername.toLowerCase().includes(normalizedQuery))
+      .sort((left, right) => right.endTimestamp - left.endTimestamp);
+  }, [games, query, resultFilter, timeFilter]);
+
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Games</span>
+        <h1>Imported Games</h1>
+        <p>Browse, filter, and choose the next game to review.</p>
+      </div>
+      <section className="trainer-table-card">
+        <div className="trainer-filter-row">
+          <label className="field">
+            <span>Search opponent</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Player name" />
+          </label>
+          <label className="field">
+            <span>Result</span>
+            <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value as ReviewResultFilter)}>
+              <option value="all">All results</option>
+              <option value="win">Wins</option>
+              <option value="loss">Losses</option>
+              <option value="draw">Draws</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Time control</span>
+            <select value={timeFilter} onChange={(event) => setTimeFilter(event.target.value as ReviewTimeFilter)}>
+              <option value="all">All controls</option>
+              {personalTimeClasses.map((timeClass) => (
+                <option key={timeClass} value={timeClass}>
+                  {personalTimeControlLabel(timeClass)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="trainer-games-table-wrap">
+          <table className="trainer-games-table">
+            <thead>
+              <tr>
+                <th>Opponent</th>
+                <th>Result</th>
+                <th>Rating change</th>
+                <th>Date</th>
+                <th>Time control</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredGames.map((game) => (
+                <tr key={game.gameUrl}>
+                  <td>
+                    <button className="inline-link-button" onClick={() => onSelectGame(game.gameUrl)} type="button">
+                      {game.opponentUsername}
+                    </button>
+                  </td>
+                  <td>{personalGameResultLabel(game)}</td>
+                  <td className={`rating-delta ${ratingDeltaClass(game.ratingChange)}`}>{formatNetChange(game.ratingChange)}</td>
+                  <td>{formatDateLabel(game.endDate)}</td>
+                  <td>{personalTimeControlLabel(game.timeClass)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {filteredGames.length === 0 ? <p className="helper-text">No imported games match these filters.</p> : null}
+      </section>
+    </div>
+  );
+}
+
+function AnalysisPage({
+  activeReviewReport,
+  analysisSettings,
+  day,
+  days,
+  games,
+  onAnalysisReport,
+  onAnalysisSettingsChange,
+  onAnalysisStatusChange,
+  onDateChange,
+  onSelectGame,
+  onUseAnalysisInWeeklyReport,
+  personalGames,
+  playerLevel,
+  selectedGameUrl,
+  showEngineDetails,
+  username,
+}: {
+  activeReviewReport: DailyEngineAnalysisReport | null;
+  analysisSettings: SelectedDayAnalysisSettings;
+  day: DailyChessSummary | null;
+  days: DailyChessSummary[];
+  games: NormalizedChessGame[];
+  onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
+  onAnalysisSettingsChange: (settings: SelectedDayAnalysisSettings) => void;
+  onAnalysisStatusChange: () => void;
+  onDateChange: (date: string) => void;
+  onSelectGame: (gameUrl: string) => void;
+  onUseAnalysisInWeeklyReport: (report: DailyEngineAnalysisReport, date: string) => void;
+  personalGames: PersonalChessGame[];
+  playerLevel: PlayerLevel;
+  selectedGameUrl: string | null;
+  showEngineDetails: boolean;
+  username: string;
+}) {
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Analysis</span>
+        <h1>Game Review</h1>
+        <p>Focus on what happened, why it was costly, and the drill that fixes it.</p>
+      </div>
+      {personalGames.length > 0 ? (
+        <IndividualGameReviewShell
+          analysisSettings={analysisSettings}
+          games={personalGames}
+          onSelectGame={onSelectGame}
+          selectedGameUrl={selectedGameUrl}
+        />
+      ) : (
+        <section className="analysis-placeholder-panel">
+          <h3>No game selected</h3>
+          <p className="helper-text">Import games, then select one from the Games page to start review.</p>
+        </section>
+      )}
+      {day && games.length > 0 ? (
+        <details className="trainer-advanced-details">
+          <summary>Selected-day analysis workflow</summary>
+          <SelectedDayReview
+            analysisReport={activeReviewReport}
+            analysisSettings={analysisSettings}
+            day={day}
+            days={days}
+            onAnalysisSettingsChange={onAnalysisSettingsChange}
+            onAnalysisReport={onAnalysisReport}
+            onAnalysisStatusChange={onAnalysisStatusChange}
+            onDateChange={onDateChange}
+            onIndividualGameSelect={onSelectGame}
+            onUseAnalysisInWeeklyReport={onUseAnalysisInWeeklyReport}
+            onViewChange={() => undefined}
+            playerLevel={playerLevel}
+            showEngineDetails={showEngineDetails}
+            username={username}
+          />
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function LeaksPage({
+  onPractice,
+  personalMistakes,
+  report,
+}: {
+  onPractice: () => void;
+  personalMistakes: PersonalChessMistake[];
+  report: PersonalChessReport;
+}) {
+  const focusAreas = buildFocusAreas(report, personalMistakes);
+
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Personal Leaks</span>
+        <h1>Recurring Weaknesses</h1>
+        <p>High-level leak cards replace the old giant tables.</p>
+      </div>
+      <div className="trainer-leak-detail-grid">
+        {focusAreas.map((area) => (
+          <LeakCard
+            actionLabel="Practice this"
+            impact={area.impact}
+            key={area.title}
+            onAction={onPractice}
+            patterns={area.patterns}
+            severity={area.severity}
+            summary={area.summary}
+            title={area.title}
+          />
+        ))}
+      </div>
+      <section className="trainer-section">
+        <div className="trainer-section-heading">
+          <h2>Opening Repair Queue</h2>
+          <p>Only openings that need a decision are shown.</p>
+        </div>
+        <div className="trainer-opening-card-grid">
+          {report.openingLeakTable.filter((opening) => opening.recommendation !== "Keep").slice(0, 4).map((opening) => (
+            <DashboardCard
+              actionLabel="Practice this"
+              eyebrow={opening.recommendation}
+              key={`${opening.color}-${opening.eco}-${opening.opening}`}
+              onAction={onPractice}
+              title={`${opening.eco} ${opening.opening}`}
+            >
+              <p>{sideLabel(opening.color)} · {opening.gamesPlayed} game(s) · {opening.losses} loss(es)</p>
+              <strong>{formatPercent(opening.scorePercent)} score</strong>
+            </DashboardCard>
+          ))}
+          {report.openingLeakTable.filter((opening) => opening.recommendation !== "Keep").length === 0 ? (
+            <section className="analysis-placeholder-panel">
+              <h3>No urgent opening leak</h3>
+              <p className="helper-text">More repeated-game data or rapid-loss analysis will populate this queue.</p>
+            </section>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DrillsPage({
+  analysisError,
+  analysisProgress,
+  analysisRunning,
+  onAnalyzeRapidLosses,
+  onDrillStatusChange,
+  onSelectDrill,
+  onStopAnalysis,
+  personalMistakes,
+  report,
+  selectedDrillId,
+}: {
+  analysisError: string | null;
+  analysisProgress: SelectedDayAnalysisProgress | null;
+  analysisRunning: boolean;
+  onAnalyzeRapidLosses: () => void;
+  onDrillStatusChange: (id: string, status: PersonalDrillStatus) => void;
+  onSelectDrill: (drillId: string) => void;
+  onStopAnalysis: () => void;
+  personalMistakes: PersonalChessMistake[];
+  report: PersonalChessReport;
+  selectedDrillId: string | null;
+}) {
+  const completion = drillCompletion(report);
+  const firstDueDrill = report.dueDrillQueue[0] ?? report.drillQueue[0] ?? null;
+  const endgameCount = countMistakesByTags(personalMistakes, ["conversion-failure", "endgame-technique"]);
+  const tacticalCount = countMistakesByTags(personalMistakes, ["hung-piece", "ignored-threat", "missed-tactic"]);
+
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Drill Library</span>
+        <h1>Practice Queue</h1>
+        <p>Drills come from Blake's games and lead back to the leaks they repair.</p>
+      </div>
+      <div className="trainer-drill-category-grid">
+        <DrillCard
+          category="Tactics"
+          difficulty={tacticalCount >= 4 ? "Intermediate" : "Beginner"}
+          estimate="15 min"
+          onStart={firstDueDrill ? () => onSelectDrill(firstDueDrill.id) : undefined}
+          progress={completion.percent}
+          title="Tactical repair"
+        />
+        <DrillCard
+          category="Openings"
+          difficulty="Beginner"
+          estimate="20 min"
+          onStart={firstDueDrill ? () => onSelectDrill(firstDueDrill.id) : undefined}
+          progress={Math.max(0, 100 - report.openingLeakTable.length * 12)}
+          title="Opening principles"
+        />
+        <DrillCard
+          category="Endgames"
+          difficulty={endgameCount > 0 ? "Intermediate" : "Beginner"}
+          estimate="10 min"
+          onStart={firstDueDrill ? () => onSelectDrill(firstDueDrill.id) : undefined}
+          progress={endgameCount > 0 ? 35 : 80}
+          title="Endgame technique"
+        />
+        <DrillCard
+          category="Strategy"
+          difficulty="Intermediate"
+          estimate="25 min"
+          onStart={firstDueDrill ? () => onSelectDrill(firstDueDrill.id) : undefined}
+          progress={report.sessionGuardrails.length > 0 ? 45 : 75}
+          title="Session decisions"
+        />
+      </div>
+      <PersonalDrillBank
+        analysisError={analysisError}
+        analysisProgress={analysisProgress}
+        analysisRunning={analysisRunning}
+        onAnalyzeRapidLosses={onAnalyzeRapidLosses}
+        onDrillStatusChange={onDrillStatusChange}
+        onStopAnalysis={onStopAnalysis}
+        report={report}
+        selectedDrillId={selectedDrillId}
+      />
+    </div>
+  );
+}
+
+function TrainingPlanPage({
+  analysisSettings,
+  onAnalysisReport,
+  onCoverageChange,
+  onSelectDay,
+  playerLevel,
+  report,
+  selectedTimeClass,
+  selectedWeek,
+  setSelectedWeek,
+  showEngineDetails,
+  username,
+  weeklyReport,
+  weeks,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  onAnalysisReport: (report: DailyEngineAnalysisReport | null) => void;
+  onCoverageChange: () => void;
+  onSelectDay: (date: string) => void;
+  playerLevel: PlayerLevel;
+  report: PersonalChessReport;
+  selectedTimeClass: ChessComTrackedTimeClass;
+  selectedWeek: string | null;
+  setSelectedWeek: (week: string) => void;
+  showEngineDetails: boolean;
+  username: string;
+  weeklyReport: WeeklyReport | null;
+  weeks: string[];
+}) {
+  const completed = weeklyReport?.analysisCoverage.analyzedDayCount ?? 0;
+  const total = weeklyReport?.analysisCoverage.totalDayCount ?? 0;
+  const percentComplete = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const currentStreak = report.lossStreaks.find((streak) => streak.timeClass === "rapid")?.current ?? 0;
+  const nextActivity =
+    report.dueDrillCount > 0
+      ? "Complete due personal drills"
+      : weeklyReport?.analysisCoverage.days.find((day) => day.status === "not_analyzed")?.date
+        ? "Analyze the next missing day"
+        : "Review one recent rapid loss";
+
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Training Plan</span>
+        <h1>This Week's Plan</h1>
+        <p>Use the week to decide what happens next, then jump into the dedicated task page.</p>
+      </div>
+      <section className="trainer-plan-summary">
+        <StatCard label="Completion" value={`${percentComplete}%`} helper={`${completed}/${total} analyzed day(s)`} />
+        <StatCard label="Rapid loss streak" value={`${currentStreak}`} helper="Current streak" />
+        <StatCard label="Next action" value={nextActivity} helper="Recommended" />
+      </section>
+      <section className="trainer-week-card">
+        {weeklyReport ? (
+          weeklyReport.analysisCoverage.days.map((day) => (
+            <button className="trainer-week-row" key={day.date} onClick={() => onSelectDay(day.date)} type="button">
+              <span>{weekdayLabel(day.date)}</span>
+              <strong>{day.status === "cached_complete" || day.status === "cached_partial" ? "Review complete" : `Review ${day.gameCount} game(s)`}</strong>
+              <em>{day.status === "cached_complete" || day.status === "cached_partial" ? "Completed" : day.status === "failed" ? "Retry" : "Upcoming"}</em>
+            </button>
+          ))
+        ) : (
+          <section className="analysis-placeholder-panel">
+            <h3>No weekly plan yet</h3>
+            <p className="helper-text">Load games with at least one active day to build a weekly plan.</p>
+          </section>
+        )}
+      </section>
+      {weeklyReport ? (
+        <details className="trainer-advanced-details">
+          <summary>Weekly report and coverage controls</summary>
+          <WeeklyReportPanel
+            analysisSettings={analysisSettings}
+            onAnalysisReport={onAnalysisReport}
+            onCoverageChange={onCoverageChange}
+            onSelectDay={onSelectDay}
+            playerLevel={playerLevel}
+            report={weeklyReport}
+            selectedTimeClass={selectedTimeClass}
+            selectedWeek={selectedWeek ?? weeklyReport.weekKey}
+            setSelectedWeek={setSelectedWeek}
+            showEngineDetails={showEngineDetails}
+            username={username}
+            weeks={weeks}
+          />
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+function ProgressPage({
+  games,
+  report,
+  summaries,
+}: {
+  games: PersonalChessGame[];
+  report: PersonalChessReport;
+  summaries: DailyChessSummary[];
+}) {
+  const rapidPoints = ratingTrendPoints(games, "rapid");
+  const blitzPoints = ratingTrendPoints(games, "blitz");
+  const mistakeCounts = Object.entries(leakTagLabels)
+    .map(([tag, label]) => ({
+      count: report.drillQueue.filter((drill) => drill.leakTag === tag).length,
+      label,
+    }))
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 5);
+
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Progress</span>
+        <h1>Stats and Trends</h1>
+        <p>Trend views stay visual; raw game data lives on the Games page.</p>
+      </div>
+      <div className="trainer-progress-grid">
+        <DashboardCard title="Rapid rating trend" eyebrow="Rating">
+          <ProgressChart label="Rapid rating trend" points={rapidPoints} />
+        </DashboardCard>
+        <DashboardCard title="Blitz rating trend" eyebrow="Rating">
+          <ProgressChart label="Blitz rating trend" points={blitzPoints} />
+        </DashboardCard>
+        <DashboardCard title="Accuracy trend" eyebrow="Score">
+          <ProgressChart
+            label="Score trend"
+            points={report.timeClassSummaries.filter((summary) => summary.gamesPlayed > 0).map((summary) => summary.scorePercent)}
+          />
+        </DashboardCard>
+        <DashboardCard title="Mistake categories" eyebrow="Repairs">
+          <div className="trainer-mistake-bars">
+            {mistakeCounts.length > 0 ? (
+              mistakeCounts.map((item) => (
+                <span key={item.label}>
+                  <strong>{item.label}</strong>
+                  <em style={{ width: `${Math.min(100, item.count * 18)}%` }} />
+                  <small>{item.count}</small>
+                </span>
+              ))
+            ) : (
+              <p className="helper-text">Analyze rapid losses to populate mistake categories.</p>
+            )}
+          </div>
+        </DashboardCard>
+      </div>
+      {summaries.length > 0 ? <RatingChangeGraph days={summaries} /> : null}
+    </div>
+  );
+}
+
+function SettingsPage({
+  analysisSettings,
+  monthCount,
+  onAnalysisSettingsChange,
+  onImport,
+  onLoad,
+  onMonthCountChange,
+  onPlayerLevelChange,
+  onRatedOnlyChange,
+  onSelectedTimeClassChange,
+  onShowEngineDetailsChange,
+  onUsernameChange,
+  playerLevel,
+  ratedOnly,
+  selectedTimeClass,
+  showEngineDetails,
+  username,
+}: {
+  analysisSettings: SelectedDayAnalysisSettings;
+  monthCount: number;
+  onAnalysisSettingsChange: (settings: SelectedDayAnalysisSettings) => void;
+  onImport: () => void;
+  onLoad: () => void;
+  onMonthCountChange: (count: number) => void;
+  onPlayerLevelChange: (level: PlayerLevel) => void;
+  onRatedOnlyChange: (ratedOnly: boolean) => void;
+  onSelectedTimeClassChange: (timeClass: ChessComTrackedTimeClass) => void;
+  onShowEngineDetailsChange: (show: boolean) => void;
+  onUsernameChange: (username: string) => void;
+  playerLevel: PlayerLevel;
+  ratedOnly: boolean;
+  selectedTimeClass: ChessComTrackedTimeClass;
+  showEngineDetails: boolean;
+  username: string;
+}) {
+  function updateAnalysisSetting(key: keyof SelectedDayAnalysisSettings, value: number) {
+    onAnalysisSettingsChange({
+      ...analysisSettings,
+      [key]: clampAnalysisSetting(key, value),
+    });
+  }
+
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Settings</span>
+        <h1>Preferences</h1>
+        <p>Import defaults, review mode, and engine controls live here.</p>
+      </div>
+      <section className="trainer-settings-grid">
+        <div className="trainer-settings-card">
+          <h2>Profile</h2>
+          <label className="field">
+            <span>Chess.com username</span>
+            <input autoComplete="off" value={username} onChange={(event) => onUsernameChange(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Recent archives</span>
+            <select value={monthCount} onChange={(event) => onMonthCountChange(Number(event.target.value))}>
+              <option value={1}>1 month</option>
+              <option value={2}>2 months</option>
+              <option value={3}>3 months</option>
+            </select>
+          </label>
+          <label className="chess-analysis-checkbox">
+            <input checked={ratedOnly} type="checkbox" onChange={(event) => onRatedOnlyChange(event.target.checked)} />
+            Rated games only
+          </label>
+          <div className="trainer-button-row">
+            <button className="secondary-button" onClick={onImport} type="button">
+              <UploadCloud size={17} aria-hidden="true" />
+              Import games
+            </button>
+            <button className="secondary-button primary-action" onClick={onLoad} type="button">
+              <Search size={17} aria-hidden="true" />
+              Load games
+            </button>
+          </div>
+        </div>
+        <div className="trainer-settings-card">
+          <h2>Review Preferences</h2>
+          <label className="field">
+            <span>Default time control</span>
+            <select value={selectedTimeClass} onChange={(event) => onSelectedTimeClassChange(event.target.value as ChessComTrackedTimeClass)}>
+              {timeClasses.map((timeClass) => (
+                <option key={timeClass} value={timeClass}>
+                  {timeControlLabel(timeClass)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="coach-mode-selector" role="group" aria-label="Player level">
+            {(["beginner", "intermediate", "advanced"] as PlayerLevel[]).map((level) => (
+              <button
+                aria-pressed={playerLevel === level}
+                className={playerLevel === level ? "selected" : ""}
+                key={level}
+                onClick={() => onPlayerLevelChange(level)}
+                type="button"
+              >
+                {level[0].toUpperCase() + level.slice(1)}
+              </button>
+            ))}
+          </div>
+          <label className="chess-analysis-checkbox">
+            <input checked={showEngineDetails} type="checkbox" onChange={(event) => onShowEngineDetailsChange(event.target.checked)} />
+            Show engine details
+          </label>
+        </div>
+        <div className="trainer-settings-card wide">
+          <h2>Engine Analysis</h2>
+          <p className="helper-text">{formatAnalysisSettingsSummary(analysisSettings)}</p>
+          <EngineSettingsControls
+            analysisRunning={false}
+            analysisSettings={analysisSettings}
+            onSettingChange={updateAnalysisSetting}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function ChessComAnalysisPanel() {
   const [username, setUsername] = useState(() => readConfiguredChessComUsername() || readLastChessComUsername());
   const [monthCount, setMonthCount] = useState(3);
@@ -3839,6 +4867,9 @@ export function ChessComAnalysisPanel() {
   const [analysisRevision, setAnalysisRevision] = useState(0);
   const [analysisSettings, setAnalysisSettings] = useState<SelectedDayAnalysisSettings>(defaultSelectedDayAnalysisSettings);
   const [activeView, setActiveView] = useState<AnalysisView>("personal");
+  const [activePage, setActivePage] = useState<TrainerPage>(() =>
+    trainerPageFromHash(typeof window === "undefined" ? "" : window.location.hash),
+  );
   const [selectedAnalysisReport, setSelectedAnalysisReport] = useState<DailyEngineAnalysisReport | null>(null);
   const [selectedIndividualGameUrl, setSelectedIndividualGameUrl] = useState<string | null>(null);
   const personalEngineRef = useRef<ChessStockfishEngine | null>(null);
@@ -3938,6 +4969,8 @@ export function ChessComAnalysisPanel() {
       setSelectedWeek(weekKeyForDate(date));
       setAnalysisRevision((revision) => revision + 1);
       setActiveView("weekly");
+      setActivePage("plan");
+      window.location.hash = trainerRouteForPage("plan");
     },
     [],
   );
@@ -3991,6 +5024,15 @@ export function ChessComAnalysisPanel() {
   }, []);
 
   useEffect(() => {
+    function handleHashChange() {
+      setActivePage(trainerPageFromHash(window.location.hash));
+    }
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
     const mostRecentWeek = getMostRecentWeek(summaries);
     if (!mostRecentWeek) {
       setSelectedWeek(null);
@@ -4003,6 +5045,14 @@ export function ChessComAnalysisPanel() {
   function updateUsername(nextUsername: string) {
     setUsername(nextUsername);
     saveConfiguredChessComUsername(nextUsername);
+  }
+
+  function navigatePage(page: TrainerPage) {
+    setActivePage(page);
+    const nextRoute = trainerRouteForPage(page);
+    if (window.location.hash.replace(/^#/, "") !== nextRoute) {
+      window.location.hash = nextRoute;
+    }
   }
 
   async function syncPersonalGames(scope: PersonalChessSyncScope) {
@@ -4055,6 +5105,7 @@ export function ChessComAnalysisPanel() {
       setAnalysisRevision((revision) => revision + 1);
       setSelectedAnalysisReport(null);
       setActiveView("personal");
+      navigatePage("overview");
       setPersonalSyncProgress({
         current: response.archiveUrls.length,
         message: `Imported ${importResult.importedCount} game(s); ${importResult.duplicateCount} duplicate(s) skipped.`,
@@ -4182,6 +5233,7 @@ export function ChessComAnalysisPanel() {
       setAnalysisRevision((revision) => revision + 1);
       setSelectedAnalysisReport(null);
       setActiveView("personal");
+      navigatePage("overview");
       saveLastChessComUsername(trimmedUsername);
     } catch (fetchError) {
       setGames([]);
@@ -4198,248 +5250,161 @@ export function ChessComAnalysisPanel() {
     }
   }
 
+  const rapidRating = formatRating(personalReport.currentRatings.rapid ?? null);
+  const profileLabel = loadedUsername || username.trim() || blakeChessTrainerConfig.defaultUsername;
+  const syncProgressCopy =
+    personalSyncProgress && personalSyncProgress.total > 0
+      ? `${personalSyncProgress.message} ${Math.min(personalSyncProgress.current + 1, personalSyncProgress.total)} / ${personalSyncProgress.total}`
+      : personalSyncProgress?.message ?? null;
+
   return (
-    <section className="chess-analysis-panel" aria-label="Blake chess trainer">
-      <div className="chess-analysis-header">
-        <div>
-          <p className="eyebrow">Blake chess trainer</p>
-          <h2>Personal leak repair surface</h2>
-          <p className="helper-text">
-            Import games, diagnose leaks, build drills, and set rules for the next rated session.
-          </p>
-        </div>
-        {loadedUsername ? <span className="status-tag">Loaded {loadedUsername}</span> : null}
-      </div>
-      <form className="chess-analysis-form" onSubmit={loadGames}>
-        <label className="field">
-          <span>Chess.com username</span>
-          <input
-            autoComplete="off"
-            placeholder={blakeChessTrainerConfig.defaultUsername}
-            value={username}
-            onChange={(event) => updateUsername(event.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>Recent archives</span>
-          <select value={monthCount} onChange={(event) => setMonthCount(Number(event.target.value))}>
-            <option value={1}>1 month</option>
-            <option value={2}>2 months</option>
-            <option value={3}>3 months</option>
-          </select>
-        </label>
-        <label className="chess-analysis-checkbox">
-          <input checked={ratedOnly} type="checkbox" onChange={(event) => setRatedOnly(event.target.checked)} />
-          Rated only
-        </label>
-        <button className="secondary-button primary-action" disabled={loading} type="submit">
-          <Search size={17} aria-hidden="true" />
-          {loading ? "Loading" : "Load games"}
-        </button>
-      </form>
-      {error ? <p className="error-text">{error}</p> : null}
-      {loading ? <p className="helper-text">Fetching Chess.com archive URLs and recent games sequentially to avoid aggressive API traffic.</p> : null}
-      {!loading && !error && personalGames.length === 0 ? (
-        <p className="helper-text">Sync {blakeChessTrainerConfig.defaultUsername}'s Chess.com games to populate the personal dashboard.</p>
-      ) : null}
-      {personalGames.length > 0 || games.length > 0 ? (
-          <div className="chess-analysis-loaded-note">
-            <span>{personalGames.length} imported personal games</span>
-            <span>{filteredGames.length} {selectedTimeClass} games in review scope</span>
-            <span>{archiveCount} monthly archives checked this run</span>
-          </div>
-      ) : null}
-      {personalGames.length > 0 ? (
-        <IndividualGameReviewShell
-          analysisSettings={analysisSettings}
-          games={personalGames}
-          onSelectGame={setSelectedIndividualGameUrl}
-          selectedGameUrl={selectedIndividualGameUrl}
+    <section className="chess-analysis-panel" aria-label="Blake chess trainer dashboard">
+      <h1 className="visually-hidden">Blake Chess Trainer</h1>
+      <div className="trainer-shell">
+        <NavigationSidebar
+          activeItem={activePage}
+          items={trainerNavItems}
+          onNavigate={navigatePage}
+          profileLabel={profileLabel}
+          profileMeta={`Rapid ${rapidRating}`}
         />
-      ) : null}
-      {games.length > 0 ? (
-        <>
-          <div className="coach-mode-panel" aria-label="Player review mode">
-            <div>
-              <p className="eyebrow">Review mode</p>
-              <h3>{playerLevel === "beginner" ? "Beginner coach" : playerLevel === "advanced" ? "Advanced analysis" : "Intermediate review"}</h3>
-            </div>
-            <div className="coach-mode-selector" role="group" aria-label="Player level">
-              {(["beginner", "intermediate", "advanced"] as PlayerLevel[]).map((level) => (
-                <button
-                  aria-pressed={playerLevel === level}
-                  className={playerLevel === level ? "selected" : ""}
-                  key={level}
-                  onClick={() => setPlayerLevel(level)}
-                  type="button"
-                >
-                  {level[0].toUpperCase() + level.slice(1)}
-                </button>
-              ))}
-            </div>
-            {playerLevel === "beginner" ? (
-              <button className="secondary-button" onClick={() => setShowEngineDetails((current) => !current)} type="button">
-                {showEngineDetails ? "Hide engine details" : "Show engine details"}
-              </button>
-            ) : null}
+        <main className="trainer-main">
+          <div className="trainer-mobile-title">
+            <strong>Blake's Chess Trainer</strong>
+            <span>{trainerPageTitles[activePage]}</span>
           </div>
-          <label className="field time-control-selector">
-            <span>Time control</span>
-            <select
-              value={selectedTimeClass}
-              onChange={(event) => {
-                setSelectedTimeClass(event.target.value as ChessComTrackedTimeClass);
+          {(error || personalSyncError || personalAnalysisError) ? (
+            <div className="trainer-alert-stack">
+              {error ? <p className="error-text">{error}</p> : null}
+              {personalSyncError ? <p className="error-text">{personalSyncError}</p> : null}
+              {personalAnalysisError ? <p className="error-text">Stockfish analysis unavailable. {personalAnalysisError}</p> : null}
+            </div>
+          ) : null}
+          {(loading || syncProgressCopy || personalGames.length > 0 || games.length > 0) ? (
+            <div className="trainer-data-strip">
+              {loading ? <span>Fetching Chess.com archives</span> : null}
+              {syncProgressCopy ? <span>{syncProgressCopy}</span> : null}
+              <span>{personalGames.length} imported games</span>
+              <span>{filteredGames.length} {selectedTimeClass} games in review scope</span>
+              <span>{archiveCount || personalSyncMeta?.archiveUrls.length || 0} archives checked</span>
+              {personalImportResult ? (
+                <span>New {personalImportResult.insertedCount}, updated {personalImportResult.updatedCount}</span>
+              ) : null}
+            </div>
+          ) : null}
+
+          {activePage === "overview" ? (
+            <OverviewDashboardPage
+              activeReviewReport={activeReviewReport}
+              importLoading={personalSyncLoading}
+              loadLoading={loading}
+              onImport={() => void syncPersonalGames("all")}
+              onLoad={() => void loadGames()}
+              onNavigate={navigatePage}
+              onUsernameChange={updateUsername}
+              personalGames={personalGames}
+              personalMistakes={personalMistakes}
+              report={personalReport}
+              username={username}
+            />
+          ) : null}
+          {activePage === "games" ? (
+            <GamesPage
+              games={personalGames}
+              onSelectGame={(gameUrl) => {
+                setSelectedIndividualGameUrl(gameUrl);
+                navigatePage("analysis");
+              }}
+            />
+          ) : null}
+          {activePage === "analysis" ? (
+            <AnalysisPage
+              activeReviewReport={activeReviewReport}
+              analysisSettings={analysisSettings}
+              day={selectedDay}
+              days={summaries}
+              games={games}
+              onAnalysisReport={handleAnalysisReport}
+              onAnalysisSettingsChange={setAnalysisSettings}
+              onAnalysisStatusChange={bumpAnalysisRevision}
+              onDateChange={setSelectedDate}
+              onSelectGame={setSelectedIndividualGameUrl}
+              onUseAnalysisInWeeklyReport={handleUseAnalysisInWeeklyReport}
+              personalGames={personalGames}
+              playerLevel={playerLevel}
+              selectedGameUrl={selectedIndividualGameUrl}
+              showEngineDetails={showEngineDetails}
+              username={loadedUsername || username}
+            />
+          ) : null}
+          {activePage === "leaks" ? (
+            <LeaksPage
+              onPractice={() => navigatePage("drills")}
+              personalMistakes={personalMistakes}
+              report={personalReport}
+            />
+          ) : null}
+          {activePage === "drills" ? (
+            <DrillsPage
+              analysisError={personalAnalysisError}
+              analysisProgress={personalAnalysisProgress}
+              analysisRunning={personalAnalysisRunning}
+              onAnalyzeRapidLosses={analyzePersonalRapidLosses}
+              onDrillStatusChange={updatePersonalDrillStatus}
+              onSelectDrill={setSelectedPersonalDrillId}
+              onStopAnalysis={stopPersonalAnalysis}
+              personalMistakes={personalMistakes}
+              report={personalReport}
+              selectedDrillId={selectedPersonalDrillId}
+            />
+          ) : null}
+          {activePage === "plan" ? (
+            <TrainingPlanPage
+              analysisSettings={analysisSettings}
+              onAnalysisReport={handleAnalysisReport}
+              onCoverageChange={bumpAnalysisRevision}
+              onSelectDay={(date) => {
+                setSelectedDate(date);
+                navigatePage("analysis");
+              }}
+              playerLevel={playerLevel}
+              report={personalReport}
+              selectedTimeClass={selectedTimeClass}
+              selectedWeek={selectedWeek}
+              setSelectedWeek={setSelectedWeek}
+              showEngineDetails={showEngineDetails}
+              username={loadedUsername || username}
+              weeklyReport={weeklyReport}
+              weeks={availableWeeks}
+            />
+          ) : null}
+          {activePage === "progress" ? (
+            <ProgressPage games={personalGames} report={personalReport} summaries={summaries} />
+          ) : null}
+          {activePage === "settings" ? (
+            <SettingsPage
+              analysisSettings={analysisSettings}
+              monthCount={monthCount}
+              onAnalysisSettingsChange={setAnalysisSettings}
+              onImport={() => void syncPersonalGames("all")}
+              onLoad={() => void loadGames()}
+              onMonthCountChange={setMonthCount}
+              onPlayerLevelChange={setPlayerLevel}
+              onRatedOnlyChange={setRatedOnly}
+              onSelectedTimeClassChange={(timeClass) => {
+                setSelectedTimeClass(timeClass);
                 setActiveView("analysis");
               }}
-            >
-              {timeClasses.map((timeClass) => (
-                <option key={timeClass} value={timeClass}>
-                  {timeControlLabel(timeClass)} ({availableCounts[timeClass] ?? 0})
-                </option>
-              ))}
-            </select>
-          </label>
-          <CoachStatusRow
-            activeDay={selectedDay}
-            fallbackGameCount={filteredGames.length}
-            relatedStatuses={relatedSelectedDayStatuses}
-            savedStatus={selectedDaySavedStatus}
-            selectedTimeClass={selectedTimeClass}
-            username={loadedUsername}
-          />
-          <CoachNextStepPanel
-            activeDay={selectedDay}
-            onViewChange={setActiveView}
-            playerLevel={playerLevel}
-            reviewReport={activeReviewReport}
-            savedStatus={selectedDaySavedStatus}
-            selectedTimeClass={selectedTimeClass}
-            weeklyReport={weeklyReport}
-          />
-        </>
-      ) : null}
-      <AnalysisViewNav activeView={activeView} onChange={setActiveView} playerLevel={playerLevel} />
-      <div className="analysis-view-panel">
-        {activeView === "personal" ? (
-          <PersonalTrainerPanel
-            analysisError={personalAnalysisError}
-            analysisProgress={personalAnalysisProgress}
-            analysisRunning={personalAnalysisRunning}
-            games={personalGames}
-            importResult={personalImportResult}
-            loading={personalSyncLoading}
-            meta={personalSyncMeta}
-            onAnalyzeRapidLosses={analyzePersonalRapidLosses}
-            onSelectDrill={(drillId) => setSelectedPersonalDrillId(drillId)}
-            onDrillStatusChange={updatePersonalDrillStatus}
-            onStopAnalysis={stopPersonalAnalysis}
-            onSync={syncPersonalGames}
-            onUsernameChange={updateUsername}
-            progress={personalSyncProgress}
-            report={personalReport}
-            selectedDrillId={selectedPersonalDrillId}
-            syncError={personalSyncError}
-            username={username}
-          />
-        ) : null}
-        {activeView !== "personal" && games.length === 0 ? (
-          <section className="analysis-placeholder-panel">
-            <h3>No review games loaded</h3>
-            <p className="helper-text">Use the Dashboard sync first, or run the recent archive loader above.</p>
-          </section>
-        ) : null}
-        {activeView !== "personal" && games.length > 0 && filteredGames.length === 0 ? (
-          <section className="analysis-placeholder-panel">
-            <h3>No {timeControlLabel(selectedTimeClass)} games found</h3>
-            <p className="helper-text">
-              No loaded games match this time control and rated-only setting. Try another time control, include unrated games, or load more archives.
-            </p>
-          </section>
-        ) : null}
-        {activeView === "rating" && filteredGames.length > 0 ? (
-          <section aria-label="Rating summaries">
-            <div className="analysis-section-heading">
-              <p className="eyebrow">Rating</p>
-              <h3>{timeControlLabel(selectedTimeClass)} trend and daily cards</h3>
-            </div>
-            <RatingChangeGraph days={summaries} />
-            <div className="chess-analysis-days">
-              {summaries.map((summary) => (
-                <DaySummaryButton
-                  day={summary}
-                  isSelected={selectedDay?.date === summary.date}
-                  key={summary.date}
-                  onSelect={() => setSelectedDate(summary.date)}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-        {activeView === "analysis" && selectedDay ? (
-          <SelectedDayReview
-            analysisReport={activeReviewReport}
-            analysisSettings={analysisSettings}
-            day={selectedDay}
-            days={summaries}
-            onAnalysisSettingsChange={setAnalysisSettings}
-            onAnalysisReport={handleAnalysisReport}
-            onAnalysisStatusChange={bumpAnalysisRevision}
-            onDateChange={setSelectedDate}
-            onIndividualGameSelect={setSelectedIndividualGameUrl}
-            onUseAnalysisInWeeklyReport={handleUseAnalysisInWeeklyReport}
-            onViewChange={setActiveView}
-            playerLevel={playerLevel}
-            showEngineDetails={showEngineDetails}
-            username={loadedUsername}
-          />
-        ) : null}
-        {activeView === "analysis" && filteredGames.length > 0 && !selectedDay ? (
-          <section className="analysis-placeholder-panel">
-            <h3>No selected day</h3>
-            <p className="helper-text">Choose a day from Rating, or reload games so the app can select the most recent active day.</p>
-          </section>
-        ) : null}
-        {activeView === "critical" ? (
-          <CriticalMovesSection
-            analysisSettings={analysisSettings}
-            moves={activeReviewReport?.criticalMoves ?? []}
-            playerLevel={playerLevel}
-            showEngineDetails={showEngineDetails}
-          />
-        ) : null}
-        {activeView === "homework" ? (
-          <HomeworkSection
-            analysisSettings={analysisSettings}
-            playerLevel={playerLevel}
-            puzzles={activeReviewReport?.homeworkPuzzles ?? []}
-            showEngineDetails={showEngineDetails}
-          />
-        ) : null}
-        {activeView === "weekly" && weeklyReport ? (
-          <WeeklyReportPanel
-            analysisSettings={analysisSettings}
-            onAnalysisReport={handleAnalysisReport}
-            onCoverageChange={bumpAnalysisRevision}
-            selectedTimeClass={selectedTimeClass}
-            onSelectDay={(date) => {
-              setSelectedDate(date);
-              setActiveView("analysis");
-            }}
-            playerLevel={playerLevel}
-            report={weeklyReport}
-            selectedWeek={selectedWeek ?? weeklyReport.weekKey}
-            setSelectedWeek={setSelectedWeek}
-            showEngineDetails={showEngineDetails}
-            username={loadedUsername}
-            weeks={availableWeeks}
-          />
-        ) : null}
-        {activeView === "weekly" && !weeklyReport ? (
-          <section className="analysis-placeholder-panel">
-            <h3>No weekly plan yet</h3>
-            <p className="helper-text">Load games with at least one active day for the selected time control, then the weekly plan can show coverage.</p>
-          </section>
-        ) : null}
+              onShowEngineDetailsChange={setShowEngineDetails}
+              onUsernameChange={updateUsername}
+              playerLevel={playerLevel}
+              ratedOnly={ratedOnly}
+              selectedTimeClass={selectedTimeClass}
+              showEngineDetails={showEngineDetails}
+              username={username}
+            />
+          ) : null}
+        </main>
       </div>
     </section>
   );

@@ -1804,14 +1804,7 @@ export function ChessPage() {
 }
 
 export function ChessComAnalysisPage() {
-  return (
-    <AppletPageShell
-      title="Blake Chess Trainer"
-      subtitle="Import Blake's Chess.com games, diagnose leaks, generate personal drills, and guide the next rated session."
-    >
-      <ChessComAnalysisPanel />
-    </AppletPageShell>
-  );
+  return <ChessComAnalysisPanel />;
 }
 
 type SuperHexagonTouchControl = "left" | "right";
