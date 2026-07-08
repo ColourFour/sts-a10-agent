@@ -3267,6 +3267,11 @@ h3 {
   min-width: 0;
 }
 
+.personal-drill-copy .card-topline {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
 .personal-drill-copy h3 {
   font-size: 1rem;
 }
@@ -6550,4 +6555,192 @@ h3 {
   .trainer-page-header h1 {
     font-size: 1.65rem;
   }
+}
+
+/* Contrast hardening for reused chess review panels on the light dashboard. */
+.chess-analysis-panel {
+  --trainer-green: #087a4d;
+  --trainer-red: #b42318;
+  --trainer-yellow: #7a4b00;
+  --trainer-muted: #475467;
+  --trainer-subtle: #667085;
+}
+
+.chess-analysis-panel .field,
+.chess-analysis-panel label,
+.chess-analysis-panel .chess-analysis-checkbox {
+  color: var(--trainer-muted);
+}
+
+.chess-analysis-panel .field span,
+.chess-analysis-panel .trainer-username-field span,
+.chess-analysis-panel .move-detail-grid dt {
+  color: var(--trainer-muted);
+}
+
+.chess-analysis-panel .inline-link-button,
+.chess-analysis-panel .source-game-link {
+  color: var(--trainer-blue);
+}
+
+.chess-analysis-panel .rating-delta.positive,
+.chess-analysis-panel .rating-change-value.positive {
+  color: var(--trainer-green);
+}
+
+.chess-analysis-panel .rating-delta.negative,
+.chess-analysis-panel .rating-change-value.negative {
+  color: var(--trainer-red);
+}
+
+.chess-analysis-panel .rating-delta.neutral,
+.chess-analysis-panel .rating-change-value.neutral {
+  color: var(--trainer-muted);
+}
+
+.chess-analysis-panel .trainer-stat-footer em,
+.chess-analysis-panel .trainer-activity-timeline li > span {
+  color: var(--trainer-green);
+}
+
+.chess-analysis-panel .trainer-activity-timeline li.tone-warning > span {
+  color: var(--trainer-yellow);
+}
+
+.chess-analysis-panel .trainer-leak-card.severity-high .trainer-card-heading em,
+.chess-analysis-panel .trainer-week-row em {
+  color: var(--trainer-yellow);
+}
+
+.chess-analysis-panel .coach-status-row strong,
+.chess-analysis-panel .analysis-section-heading .eyebrow,
+.chess-analysis-panel .individual-review-metric span,
+.chess-analysis-panel .weekly-summary-card h3,
+.chess-analysis-panel .chess-analysis-time-card h4,
+.chess-analysis-panel .individual-review-lines h4,
+.chess-analysis-panel .top-move-panel h4 {
+  color: var(--trainer-blue);
+}
+
+.chess-analysis-panel .move-grade-pill.class-brilliant,
+.chess-analysis-panel .individual-review-move-tab.class-brilliant,
+.chess-analysis-panel .individual-graph-point.class-brilliant {
+  border-color: #7a4fd6;
+  color: #4b258f;
+  background: #f1eaff;
+}
+
+.chess-analysis-panel .move-grade-pill.class-great,
+.chess-analysis-panel .individual-review-move-tab.class-great,
+.chess-analysis-panel .individual-graph-point.class-great {
+  border-color: #087a78;
+  color: #075e5c;
+  background: #e8fbf9;
+}
+
+.chess-analysis-panel .move-grade-pill.class-best,
+.chess-analysis-panel .individual-review-move-tab.class-best,
+.chess-analysis-panel .individual-graph-point.class-best {
+  border-color: #1769e8;
+  color: #1555b8;
+  background: #eaf2ff;
+}
+
+.chess-analysis-panel .move-grade-pill.class-excellent,
+.chess-analysis-panel .individual-review-move-tab.class-excellent,
+.chess-analysis-panel .individual-graph-point.class-excellent,
+.chess-analysis-panel .move-grade-pill.class-good,
+.chess-analysis-panel .individual-review-move-tab.class-good,
+.chess-analysis-panel .individual-graph-point.class-good,
+.chess-analysis-panel .move-grade-pill.class-book,
+.chess-analysis-panel .individual-review-move-tab.class-book,
+.chess-analysis-panel .individual-graph-point.class-book {
+  border-color: #087a4d;
+  color: #087a4d;
+  background: #eaf8f2;
+}
+
+.chess-analysis-panel .move-grade-pill.class-inaccuracy,
+.chess-analysis-panel .individual-review-move-tab.class-inaccuracy,
+.chess-analysis-panel .individual-graph-point.class-inaccuracy,
+.chess-analysis-panel .impact-pill.impact-major,
+.chess-analysis-panel .homework-state-pill.state-due,
+.chess-analysis-panel .homework-state-pill.state-needs-review,
+.chess-analysis-panel .homework-state-pill.state-skipped {
+  border-color: #9a5b00;
+  color: #7a4b00;
+  background: #fff6e4;
+}
+
+.chess-analysis-panel .move-grade-pill.class-mistake,
+.chess-analysis-panel .individual-review-move-tab.class-mistake,
+.chess-analysis-panel .individual-graph-point.class-mistake,
+.chess-analysis-panel .move-grade-pill.class-miss,
+.chess-analysis-panel .individual-review-move-tab.class-miss,
+.chess-analysis-panel .individual-graph-point.class-miss,
+.chess-analysis-panel .impact-pill.impact-mistake,
+.chess-analysis-panel .impact-pill.impact-blunder,
+.chess-analysis-panel .impact-pill.impact-mate,
+.chess-analysis-panel .homework-state-pill.state-failed {
+  border-color: #b42318;
+  color: #b42318;
+  background: #fff0f0;
+}
+
+.chess-analysis-panel .move-grade-pill.class-blunder,
+.chess-analysis-panel .individual-review-move-tab.class-blunder,
+.chess-analysis-panel .individual-graph-point.class-blunder {
+  border-color: #7a0f21;
+  color: #7a0f21;
+  background: #ffe8ec;
+}
+
+.chess-analysis-panel .homework-state-pill.state-solved {
+  color: var(--trainer-green);
+  background: #eaf8f2;
+}
+
+.chess-analysis-panel .impact-pill.impact-inaccuracy {
+  color: #1555b8;
+  background: #eaf2ff;
+}
+
+.chess-analysis-panel .impact-pill.impact-minor {
+  color: var(--trainer-muted);
+  background: #f7f9fc;
+}
+
+.chess-analysis-panel .personal-drill-copy .impact-pill {
+  max-width: 100%;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+.chess-analysis-panel .fen-square.light {
+  background: #6594d8;
+}
+
+.chess-analysis-panel .fen-square.dark {
+  background: #3465ad;
+}
+
+.chess-analysis-panel .fen-piece.piece-white {
+  color: #ffffff;
+  -webkit-text-stroke: 0.75px #0f172a;
+  text-shadow:
+    0 1px 0 rgba(15, 23, 42, 0.8),
+    0 0 1px rgba(15, 23, 42, 0.9);
+}
+
+.chess-analysis-panel .fen-piece.piece-black {
+  color: #020617;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.chess-analysis-panel .fen-file-label,
+.chess-analysis-panel .fen-rank-label,
+.chess-analysis-panel .fen-square.dark .fen-file-label,
+.chess-analysis-panel .fen-square.dark .fen-rank-label {
+  color: #ffffff;
+  text-shadow: 0 1px 1px rgba(2, 6, 23, 0.72);
 }
