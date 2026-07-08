@@ -37,6 +37,7 @@ export type IndividualGameReviewMove = ExtractedGameMovePosition & {
   expectedPointAfter: number;
   expectedPointBefore: number;
   expectedPointLoss: number;
+  punishmentLines: StockfishTopMove[];
   sacrificedMaterialCp: number;
   topLineExpectedGap: number;
   topLines: StockfishTopMove[];
@@ -92,7 +93,7 @@ export const individualKeyClassifications = new Set<IndividualMoveClassification
   "mistake",
 ]);
 
-const reviewCachePrefix = "sts2.chessComAnalysis.individualGameReview.v1";
+const reviewCachePrefix = "sts2.chessComAnalysis.individualGameReview.v2";
 const mateCentipawn = 100000;
 const pieceValues: Record<string, number> = {
   b: 330,
@@ -448,6 +449,19 @@ export async function analyzeIndividualGameReview({
         sacrificedMaterialCp: moveSacrifice,
         topLineExpectedGap: moveLineGap,
       });
+      let punishmentLines: StockfishTopMove[] = [];
+      if (individualKeyClassifications.has(classification) && !signal?.aborted) {
+        try {
+          punishmentLines = await engine.analyzeTopMoves(position.fenAfter, {
+            depth: settings.depth,
+            lineCount: 3,
+            moveTimeMs: settings.moveTimeMs,
+            signal,
+          });
+        } catch {
+          punishmentLines = [];
+        }
+      }
 
       moves.push({
         ...position,
@@ -460,6 +474,7 @@ export async function analyzeIndividualGameReview({
         expectedPointAfter: evaluationToExpectedPoints(evalAfter),
         expectedPointBefore: evaluationToExpectedPoints(evalBefore),
         expectedPointLoss: moveExpectedPointLoss,
+        punishmentLines,
         sacrificedMaterialCp: moveSacrifice,
         topLineExpectedGap: moveLineGap,
         topLines,

@@ -433,6 +433,25 @@ function formatPvLine(fen: string, line: string[]): string {
   }
 }
 
+function formatPvSnippet(fen: string, line: string[], moveLimit = 3): string {
+  try {
+    const game = new Chess(fen);
+    return line
+      .slice(0, moveLimit)
+      .map((uciMove) => {
+        const move = game.move({
+          from: uciMove.slice(0, 2) as ChessSquare,
+          promotion: uciMove[4] ?? "q",
+          to: uciMove.slice(2, 4) as ChessSquare,
+        });
+        return move?.san ?? formatUciMove(uciMove);
+      })
+      .join(" ");
+  } catch {
+    return line.slice(0, moveLimit).map(formatUciMove).join(" ");
+  }
+}
+
 function topMoveEvaluationLabel(move: StockfishTopMove): string {
   return formatEvaluation(move.evaluation);
 }
@@ -440,7 +459,10 @@ function topMoveEvaluationLabel(move: StockfishTopMove): string {
 function PlayableAnalysisBoard({
   analysisSettings,
   allowEnginePanel = false,
+  autoAnalyzeAfterMove = false,
   bestMove,
+  enginePanelIdleCopy = "Use this only when you want extra Stockfish lines for the current board position.",
+  enginePanelTitle = "Top 3 moves for current position",
   fen,
   lastMove: providedLastMove,
   orientation,
@@ -448,7 +470,10 @@ function PlayableAnalysisBoard({
 }: {
   analysisSettings: SelectedDayAnalysisSettings;
   allowEnginePanel?: boolean;
+  autoAnalyzeAfterMove?: boolean;
   bestMove?: string;
+  enginePanelIdleCopy?: string;
+  enginePanelTitle?: string;
   fen: string;
   lastMove?: string;
   orientation: "black" | "white";
@@ -462,9 +487,11 @@ function PlayableAnalysisBoard({
   const [topMoves, setTopMoves] = useState<StockfishTopMove[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [analyzedFen, setAnalyzedFen] = useState<string | null>(null);
   const currentFen = game.fen();
   const legalTargets = useMemo(() => legalMoveSquares(game, selectedSquare), [game, selectedSquare]);
   const topMoveSquares = useMemo(() => moveSquares(topMoves[0]?.move ?? ""), [topMoves]);
+  const topMoveFen = analyzedFen ?? currentFen;
 
   useEffect(() => {
     abortControllerRef.current?.abort();
@@ -475,6 +502,7 @@ function PlayableAnalysisBoard({
     setTopMoves([]);
     setAnalysisError(null);
     setAnalysisRunning(false);
+    setAnalyzedFen(null);
   }, [fen]);
 
   useEffect(() => {
@@ -493,6 +521,41 @@ function PlayableAnalysisBoard({
     setTopMoves([]);
     setAnalysisError(null);
     setAnalysisRunning(false);
+    setAnalyzedFen(null);
+  }
+
+  async function analyzePosition(fenToAnalyze: string) {
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    engineRef.current?.dispose();
+    engineRef.current = createStockfishEngine();
+    setAnalysisError(null);
+    setAnalysisRunning(true);
+    setAnalyzedFen(fenToAnalyze);
+
+    try {
+      const moves = await engineRef.current.analyzeTopMoves(fenToAnalyze, {
+        depth: analysisSettings.depth,
+        lineCount: 3,
+        moveTimeMs: analysisSettings.moveTimeMs,
+        signal: abortController.signal,
+      });
+      if (abortControllerRef.current !== abortController) {
+        return;
+      }
+      setTopMoves(moves);
+    } catch (error) {
+      if (abortControllerRef.current !== abortController) {
+        return;
+      }
+      setTopMoves([]);
+      setAnalysisError(error instanceof Error ? error.message : "Could not analyze this position.");
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        setAnalysisRunning(false);
+      }
+    }
   }
 
   function handleSquareClick(square: ChessSquare) {
@@ -510,6 +573,10 @@ function PlayableAnalysisBoard({
         setSelectedSquare(null);
         setTopMoves([]);
         setAnalysisError(null);
+        setAnalyzedFen(null);
+        if (autoAnalyzeAfterMove) {
+          void analyzePosition(nextGame.fen());
+        }
       }
       return;
     }
@@ -522,36 +589,8 @@ function PlayableAnalysisBoard({
     setSelectedSquare(null);
   }
 
-  async function analyzeCurrentPosition() {
-    abortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-    engineRef.current?.dispose();
-    engineRef.current = createStockfishEngine();
-    setAnalysisError(null);
-    setAnalysisRunning(true);
-
-    try {
-      const moves = await engineRef.current.analyzeTopMoves(game.fen(), {
-        depth: analysisSettings.depth,
-        lineCount: 3,
-        moveTimeMs: analysisSettings.moveTimeMs,
-        signal: abortController.signal,
-      });
-      if (abortControllerRef.current !== abortController) {
-        return;
-      }
-      setTopMoves(moves);
-    } catch (error) {
-      if (abortControllerRef.current !== abortController) {
-        return;
-      }
-      setAnalysisError(error instanceof Error ? error.message : "Could not analyze this position.");
-    } finally {
-      if (abortControllerRef.current === abortController) {
-        setAnalysisRunning(false);
-      }
-    }
+  function analyzeCurrentPosition() {
+    void analyzePosition(game.fen());
   }
 
   const boardRows = Array.from({ length: 8 }, (_, rowIndex) =>
@@ -586,7 +625,11 @@ function PlayableAnalysisBoard({
                 >
                   {colIndex === 0 ? <span className="fen-rank-label">{rank}</span> : null}
                   {rowIndex === 7 ? <span className="fen-file-label">{file}</span> : null}
-                  {piece ? fenPieceGlyphs[piece.color === "w" ? piece.type.toUpperCase() : piece.type] : ""}
+                  {piece ? (
+                    <span className={`fen-piece ${piece.color === "w" ? "piece-white" : "piece-black"}`}>
+                      {fenPieceGlyphs[piece.color === "w" ? piece.type.toUpperCase() : piece.type]}
+                    </span>
+                  ) : ""}
                   {isLegal ? <span className="fen-legal-dot" aria-hidden="true" /> : null}
                 </button>
               );
@@ -607,20 +650,21 @@ function PlayableAnalysisBoard({
       <div className="position-status-row">
         <span>{game.turn() === "w" ? "White" : "Black"} to move</span>
         {lastMove ? <span>Last move {formatUciMove(lastMove)}</span> : null}
+        {topMoves[0] ? <span>Engine eval {topMoveEvaluationLabel(topMoves[0])}</span> : null}
         {game.isCheck() ? <span>Check</span> : null}
         {game.isGameOver() ? <span>Game over</span> : null}
       </div>
       {analysisError ? <p className="error-text">Stockfish analysis unavailable. {analysisError}</p> : null}
       {allowEnginePanel ? (
         <div className="top-move-panel" aria-label="Top engine moves">
-          <h4>Top 3 moves for current position</h4>
+          <h4>{enginePanelTitle}</h4>
           {topMoves.length > 0 ? (
             <ol>
               {topMoves.map((move) => (
                 <li key={`${move.rank}-${move.move}`}>
-                  <strong>#{move.rank} {formatMoveLabel(currentFen, move.move)}</strong>
+                  <strong>#{move.rank} {formatMoveLabel(topMoveFen, move.move)}</strong>
                   <span> · {topMoveEvaluationLabel(move)}</span>
-                  <small>{formatPvLine(currentFen, move.line)}</small>
+                  <small>{formatPvLine(topMoveFen, move.line)}</small>
                 </li>
               ))}
             </ol>
@@ -628,7 +672,7 @@ function PlayableAnalysisBoard({
             <p className="helper-text">
               {analysisRunning
                 ? "Analyzing top moves for this board position."
-                : "Use this only when you want extra Stockfish lines for the current board position."}
+                : enginePanelIdleCopy}
             </p>
           )}
         </div>
@@ -705,7 +749,11 @@ function FenBoard({
               >
                 {colIndex === 0 ? <span className="fen-rank-label">{rank}</span> : null}
                 {rowIndex === 7 ? <span className="fen-file-label">{file}</span> : null}
-                {piece ? fenPieceGlyphs[piece] : ""}
+                {piece ? (
+                  <span className={`fen-piece ${piece === piece.toUpperCase() ? "piece-white" : "piece-black"}`}>
+                    {fenPieceGlyphs[piece]}
+                  </span>
+                ) : ""}
               </span>
             );
           }),
@@ -1112,13 +1160,17 @@ function IndividualGameReviewPanel({
         <>
           <div className="individual-review-layout">
             <div className="individual-review-board-column">
-              <FenBoard
+              <PlayableAnalysisBoard
+                allowEnginePanel
+                analysisSettings={analysisSettings}
+                autoAnalyzeAfterMove
                 bestMove={selectedMoveIsRetry && retryAnswerVisible ? selectedMove.bestMove : undefined}
                 fen={selectedBoardFen}
                 lastMove={showMoveAnswer ? selectedMove.playedMoveUci : undefined}
-                mistakeMove={showMoveAnswer && individualKeyClassifications.has(selectedMove.classification) ? selectedMove.playedMoveUci : undefined}
+                playedMove={showMoveAnswer && individualKeyClassifications.has(selectedMove.classification) ? selectedMove.playedMoveUci : undefined}
                 orientation={game.playerColor}
-                size="large"
+                enginePanelTitle="Try a move, then Stockfish evaluates"
+                enginePanelIdleCopy="Play a legal move on the board. Stockfish will run automatically and show the resulting evaluation and best continuations."
               />
               {selectedMoveIsRetry ? (
                 <div className="individual-retry-panel">
@@ -1171,6 +1223,24 @@ function IndividualGameReviewPanel({
                   <dd>{formatCentipawnLoss(selectedMove.centipawnLoss)}</dd>
                 </div>
               </dl>
+              {individualKeyClassifications.has(selectedMove.classification) ? (
+                <div className="individual-review-lines punishment-lines">
+                  <h4>Why this is costly</h4>
+                  {(selectedMove.punishmentLines ?? []).length > 0 ? (
+                    <ol>
+                      {(selectedMove.punishmentLines ?? []).slice(0, 3).map((line) => (
+                        <li key={`punish-${line.rank}-${line.move}`}>
+                          <strong>#{line.rank} {formatMoveLabel(selectedMove.fenAfter, line.move)}</strong>
+                          <span>{formatEvaluation(line.evaluation)}</span>
+                          <small>{formatPvSnippet(selectedMove.fenAfter, line.line, 3)}</small>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="helper-text">Re-run this review to add the opponent continuation that punishes this move.</p>
+                  )}
+                </div>
+              ) : null}
               {showMoveAnswer ? (
                 <div className="individual-review-lines">
                   <h4>Top positive lines</h4>

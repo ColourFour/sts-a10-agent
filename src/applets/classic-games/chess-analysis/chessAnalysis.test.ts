@@ -11,6 +11,7 @@ import {
   readCachedIndividualGameReview,
   summarizeIndividualGameReview,
   writeCachedIndividualGameReview,
+  analyzeIndividualGameReview,
   type IndividualGameReviewMove,
   type IndividualGameReviewReport,
 } from "./chessIndividualGameReview";
@@ -31,6 +32,7 @@ import {
   summarizeCachedAnalysisStatus,
   writeCachedDailyAnalysis,
 } from "./chessSelectedDayAnalysis";
+import type { ChessStockfishEngine } from "./chessStockfishEngine";
 import type { CriticalMoveAnalysis, DailyEngineAnalysisReport, NormalizedChessGame } from "./chessReportTypes";
 import { buildWeeklyAnalysisCacheKey, buildWeeklyReport, getAvailableWeeks, getMostRecentWeek } from "./chessWeeklyReport";
 
@@ -529,6 +531,7 @@ describe("individual game review helpers", () => {
       playedMoveUci: "e2e4",
       playerColor: "white",
       ply: 1,
+      punishmentLines: [],
       sacrificedMaterialCp: 0,
       sideToMove: "white",
       topLineExpectedGap: 0,
@@ -630,6 +633,49 @@ describe("individual game review helpers", () => {
     expect(summary.classificationCounts.best).toBe(1);
     expect(summary.classificationCounts.blunder).toBe(1);
     expect(summary.keyMoveCount).toBe(2);
+  });
+
+  it("adds opponent punishment lines for key individual review moves", async () => {
+    const [personalGame] = normalizePersonalChessComGames(
+      [
+        game({
+          pgn: '[Event "Rated Blitz"]\n\n1. e4 *',
+          url: "https://www.chess.com/game/live/punishment-1",
+        }),
+      ],
+      "TestPlayer",
+    );
+    let topMoveCallCount = 0;
+    const engine: ChessStockfishEngine = {
+      analyzeFen: async () => ({
+        bestMove: "e7e5",
+        evaluation: { type: "cp", value: 800 },
+        rawInfo: [],
+      }),
+      analyzeTopMoves: async () => {
+        topMoveCallCount += 1;
+        return topMoveCallCount === 1
+          ? [{ evaluation: { type: "cp", value: 100 }, line: ["d2d4"], move: "d2d4", rank: 1 }]
+          : [
+              { evaluation: { type: "cp", value: 420 }, line: ["e7e5", "g1f3", "b8c6"], move: "e7e5", rank: 1 },
+              { evaluation: { type: "cp", value: 360 }, line: ["d7d5", "e4d5", "d8d5"], move: "d7d5", rank: 2 },
+            ];
+      },
+      dispose: () => undefined,
+      initialize: async () => undefined,
+      stop: () => undefined,
+    };
+
+    const report = await analyzeIndividualGameReview({
+      engine,
+      game: personalGame,
+      settings: { depth: 10, lineCount: 5, moveTimeMs: 400 },
+    });
+
+    expect(report.moves[0]).toMatchObject({
+      classification: "blunder",
+      punishmentLines: [{ move: "e7e5" }, { move: "d7d5" }],
+    });
   });
 
   it("keys and restores cached individual game reviews independently", () => {

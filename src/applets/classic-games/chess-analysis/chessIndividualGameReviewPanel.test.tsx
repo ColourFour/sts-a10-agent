@@ -67,6 +67,7 @@ function move(overrides: Partial<IndividualGameReviewMove>): IndividualGameRevie
     playedMoveUci: "e2e4",
     playerColor: "white",
     ply: 1,
+    punishmentLines: [],
     sacrificedMaterialCp: 0,
     sideToMove: "white",
     topLineExpectedGap: 0,
