@@ -16,6 +16,14 @@ import {
   type IndividualGameReviewReport,
 } from "./chessIndividualGameReview";
 import { classifyLatestGameMoveGrade } from "./chessLatestGameReview";
+import {
+  buildPersonalOpeningMatches,
+  entryKey,
+  epdToPreviewFen,
+  parseOpeningTsv,
+  searchOpeningBook,
+  type OpeningBookEntry,
+} from "./chessOpenings";
 import { blakeChessTrainerConfig } from "./chessPersonalConfig";
 import { buildPersonalChessReport, classifyPersonalLeakTag } from "./chessPersonalInsights";
 import { normalizePersonalChessComGames } from "./chessPersonalImport";
@@ -161,6 +169,77 @@ describe("daily chess summaries", () => {
       losses: 1,
       netChange: 0,
     });
+  });
+});
+
+describe("opening book helpers", () => {
+  const entries: OpeningBookEntry[] = [
+    {
+      eco: "B01",
+      epd: "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+      family: "Scandinavian Defense",
+      fen: "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+      name: "Scandinavian Defense",
+      pgn: "1. e4 d5",
+      ply: 2,
+      uci: ["e2e4", "d7d5"],
+      volume: "B",
+    },
+    {
+      eco: "C20",
+      epd: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+      family: "King Pawn Game",
+      fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+      name: "King Pawn Game",
+      pgn: "1. e4 e5",
+      ply: 2,
+      uci: ["e2e4", "e7e5"],
+      volume: "C",
+    },
+  ];
+
+  it("parses Lichess opening TSV rows", () => {
+    expect(parseOpeningTsv("eco\tname\tpgn\nB01\tScandinavian Defense\t1. e4 d5")).toEqual([
+      {
+        eco: "B01",
+        name: "Scandinavian Defense",
+        pgn: "1. e4 d5",
+        volume: "B",
+      },
+    ]);
+  });
+
+  it("converts EPD fields to a board-preview FEN", () => {
+    expect(epdToPreviewFen(entries[0].epd)).toBe("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1");
+  });
+
+  it("ranks exact ECO and name matches ahead of broad PGN matches", () => {
+    expect(searchOpeningBook({ entries, filters: { query: "B01" } })[0].name).toBe("Scandinavian Defense");
+    expect(searchOpeningBook({ entries, filters: { query: "King Pawn" } })[0].eco).toBe("C20");
+  });
+
+  it("filters by ECO volume, family, and personal repair matches", () => {
+    const personalMatches = buildPersonalOpeningMatches(entries, [
+      {
+        averageMoveCount: 18,
+        color: "white",
+        commonFailurePhase: "Opening",
+        drillIds: [],
+        eco: "B01",
+        gamesPlayed: 2,
+        losses: 2,
+        opening: "Scandinavian Defense",
+        recommendation: "Quarantine",
+        sampleGameUrl: "https://www.chess.com/game/live/1",
+        scorePercent: 0,
+        shortLosses: 2,
+      },
+    ]);
+
+    expect(personalMatches.get(entryKey(entries[0]))?.recommendation).toBe("Quarantine");
+    expect(searchOpeningBook({ entries, filters: { volume: "B" } })).toHaveLength(1);
+    expect(searchOpeningBook({ entries, filters: { family: "King Pawn Game" } })[0].eco).toBe("C20");
+    expect(searchOpeningBook({ entries, filters: { personalRepairOnly: true }, personalMatches })).toEqual([entries[0]]);
   });
 });
 

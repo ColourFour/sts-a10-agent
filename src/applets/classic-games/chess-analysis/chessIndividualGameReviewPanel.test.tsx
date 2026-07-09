@@ -130,6 +130,71 @@ afterEach(() => {
 });
 
 describe("individual game review panel", () => {
+  it("shows the openings navigation item and opens the direct openings route", async () => {
+    window.location.hash = "#/applets/chess-com-analysis/openings";
+
+    render(<ChessComAnalysisPanel />);
+
+    expect(await screen.findByRole("button", { name: /Openings/i })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: /Opening Reference/i })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: /Search openings/i })).toBeTruthy();
+  });
+
+  it("searches the bundled opening book by ECO and name", async () => {
+    const user = userEvent.setup();
+    window.location.hash = "#/applets/chess-com-analysis";
+
+    render(<ChessComAnalysisPanel />);
+    await user.click(await screen.findByRole("button", { name: /Openings/i }));
+    await user.type(screen.getByRole("textbox", { name: /Search openings/i }), "B01 Scandinavian");
+
+    expect((await screen.findAllByRole("button", { name: /B01.*Scandinavian Defense/i })).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: /Scandinavian Defense/i })).toBeTruthy();
+  });
+
+  it("filters opening study results to weak personal openings", async () => {
+    const user = userEvent.setup();
+    const scandinavianLossPgn = [
+      '[Event "Rated Blitz"]',
+      '[ECO "B01"]',
+      '[Opening "Scandinavian Defense"]',
+      '[Result "0-1"]',
+      "",
+      "1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe5+ 0-1",
+    ].join("\n");
+    const losses = [
+      game({
+        eco: "B01",
+        gameId: "scandi-loss-1",
+        gameUrl: "https://www.chess.com/game/live/scandi-loss-1",
+        moveCount: 6,
+        normalizedResult: "loss",
+        opening: "Scandinavian Defense",
+        pgn: scandinavianLossPgn,
+      }),
+      game({
+        eco: "B01",
+        endDate: "2026-06-03",
+        endTimestamp: 1780488000,
+        gameId: "scandi-loss-2",
+        gameUrl: "https://www.chess.com/game/live/scandi-loss-2",
+        moveCount: 6,
+        normalizedResult: "loss",
+        opening: "Scandinavian Defense",
+        pgn: scandinavianLossPgn,
+      }),
+    ];
+    window.localStorage.setItem(gamesKey, JSON.stringify(losses));
+    window.location.hash = "#/applets/chess-com-analysis/openings";
+
+    render(<ChessComAnalysisPanel />);
+    expect(await screen.findByText(/2 imported games/i)).toBeTruthy();
+    await user.click(screen.getByRole("checkbox", { name: /Personal repair only/i }));
+
+    expect((await screen.findAllByRole("button", { name: /B01.*Scandinavian Defense/i })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /King Pawn Game/i })).toBeNull();
+  });
+
   it("selects an older imported game and filters review moves by side", async () => {
     const user = userEvent.setup();
     const olderGame = game({

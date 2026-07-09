@@ -1,6 +1,7 @@
 import { Chess, type Square as ChessSquare } from "chess.js";
 import {
   BarChart3,
+  BookOpen,
   Brain,
   CalendarDays,
   CheckCircle2,
@@ -36,11 +37,20 @@ import {
   StatCard,
   type ChessDashboardNavItem,
 } from "../../../components/chess";
+import { openingBookEntries, openingBookSource } from "./chessOpenings.generated";
 import {
   fetchRecentChessComGames,
   readLastChessComUsername,
   saveLastChessComUsername,
 } from "./chessComApi";
+import {
+  buildPersonalOpeningMatches,
+  entryKey,
+  getOpeningFamilies,
+  searchOpeningBook,
+  type OpeningBookEntry,
+  type OpeningBookVolume,
+} from "./chessOpenings";
 import { summarizeDailyChessGames } from "./chessDailySummary";
 import { normalizeChessComGames } from "./chessGameNormalization";
 import {
@@ -135,13 +145,14 @@ const analysisViews: { id: AnalysisView; labels: Record<PlayerLevel, string> }[]
   { id: "homework", labels: { advanced: "Homework", beginner: "Practice", intermediate: "Homework" } },
   { id: "weekly", labels: { advanced: "Weekly Report", beginner: "Weekly Plan", intermediate: "Weekly Report" } },
 ];
-type TrainerPage = "analysis" | "drills" | "games" | "leaks" | "overview" | "plan" | "progress" | "settings";
+type TrainerPage = "analysis" | "drills" | "games" | "leaks" | "openings" | "overview" | "plan" | "progress" | "settings";
 
 const trainerPagePaths: Record<TrainerPage, string> = {
   analysis: "analysis",
   drills: "drills",
   games: "games",
   leaks: "leaks",
+  openings: "openings",
   overview: "",
   plan: "training-plan",
   progress: "progress",
@@ -153,6 +164,7 @@ const trainerPageTitles: Record<TrainerPage, string> = {
   drills: "Drill Library",
   games: "Games",
   leaks: "Personal Leaks",
+  openings: "Openings",
   overview: "Overview",
   plan: "Training Plan",
   progress: "Progress",
@@ -164,6 +176,7 @@ const trainerNavItems: ChessDashboardNavItem<TrainerPage>[] = [
   { id: "games", icon: <FolderOpen size={18} aria-hidden="true" />, label: "Games" },
   { id: "analysis", icon: <FileSearch size={18} aria-hidden="true" />, label: "Analysis" },
   { id: "leaks", icon: <Target size={18} aria-hidden="true" />, label: "Leaks" },
+  { id: "openings", icon: <BookOpen size={18} aria-hidden="true" />, label: "Openings" },
   { id: "drills", icon: <Dumbbell size={18} aria-hidden="true" />, label: "Drills" },
   { id: "plan", icon: <CalendarDays size={18} aria-hidden="true" />, label: "Training Plan" },
   { id: "progress", icon: <LineChart size={18} aria-hidden="true" />, label: "Progress" },
@@ -180,6 +193,10 @@ function trainerPageFromHash(hash: string): TrainerPage {
 }
 
 function trainerRouteForPage(page: TrainerPage): string {
+  if (page === "openings") {
+    return "/applets/chess-com-analysis/openings";
+  }
+
   const suffix = trainerPagePaths[page];
   return suffix ? `/applets/chess-com-analysis/${suffix}` : "/applets/chess-com-analysis";
 }
@@ -4228,7 +4245,7 @@ function OverviewDashboardPage({
               <LeakCard
                 actionLabel="View detail"
                 key={area.title}
-                onAction={() => onNavigate(area.title === "Opening Principles" ? "leaks" : "drills")}
+                onAction={() => onNavigate(area.title === "Opening Principles" ? "openings" : "drills")}
                 severity={area.severity}
                 summary={area.summary}
                 title={area.title}
@@ -4418,10 +4435,12 @@ function AnalysisPage({
 
 function LeaksPage({
   onPractice,
+  onStudyOpenings,
   personalMistakes,
   report,
 }: {
   onPractice: () => void;
+  onStudyOpenings: () => void;
   personalMistakes: PersonalChessMistake[];
   report: PersonalChessReport;
 }) {
@@ -4459,7 +4478,7 @@ function LeaksPage({
               actionLabel="Practice this"
               eyebrow={opening.recommendation}
               key={`${opening.color}-${opening.eco}-${opening.opening}`}
-              onAction={onPractice}
+              onAction={onStudyOpenings}
               title={`${opening.eco} ${opening.opening}`}
             >
               <p>{sideLabel(opening.color)} · {opening.gamesPlayed} game(s) · {opening.losses} loss(es)</p>
@@ -4472,6 +4491,226 @@ function LeaksPage({
               <p className="helper-text">More repeated-game data or rapid-loss analysis will populate this queue.</p>
             </section>
           ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OpeningPersonalStats({ leak }: { leak: PersonalOpeningLeak }) {
+  return (
+    <section className="trainer-opening-personal-stats">
+      <div className="trainer-section-heading">
+        <h2>Personal Signal</h2>
+        <p>{sideLabel(leak.color)} games currently flag this opening for review.</p>
+      </div>
+      <div className="trainer-stat-grid compact">
+        <StatCard label="Score" value={formatPercent(leak.scorePercent)} helper={`${leak.gamesPlayed} game(s)`} />
+        <StatCard label="Losses" value={`${leak.losses}`} helper={`${leak.shortLosses} short loss(es)`} />
+        <StatCard label="Phase" value={leak.commonFailurePhase ?? "n/a"} helper="Most common failure" />
+        <StatCard label="Decision" value={leak.recommendation} helper={leak.eco} />
+      </div>
+    </section>
+  );
+}
+
+function OpeningsPage({
+  onNavigate,
+  report,
+}: {
+  onNavigate: (page: TrainerPage) => void;
+  report: PersonalChessReport;
+}) {
+  const repairLeaks = report.openingLeakTable.filter((opening) => opening.recommendation !== "Keep");
+  const personalMatches = useMemo(
+    () => buildPersonalOpeningMatches(openingBookEntries, repairLeaks),
+    [repairLeaks],
+  );
+  const families = useMemo(() => getOpeningFamilies(openingBookEntries), []);
+  const [query, setQuery] = useState("");
+  const [volume, setVolume] = useState<OpeningBookVolume | "all">("all");
+  const [family, setFamily] = useState("all");
+  const [personalRepairOnly, setPersonalRepairOnly] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  const results = useMemo(
+    () =>
+      searchOpeningBook({
+        filters: {
+          family: family === "all" ? undefined : family,
+          personalRepairOnly,
+          query,
+          volume,
+        },
+        personalMatches,
+      }),
+    [family, personalMatches, personalRepairOnly, query, volume],
+  );
+  const selectedEntry =
+    results.find((entry) => entryKey(entry) === selectedKey) ?? results[0] ?? openingBookEntries[0];
+  const selectedLeak = selectedEntry ? personalMatches.get(entryKey(selectedEntry)) ?? null : null;
+
+  useEffect(() => {
+    if (!selectedEntry) {
+      setSelectedKey(null);
+      return;
+    }
+
+    setSelectedKey((currentKey) => {
+      if (currentKey && results.some((entry) => entryKey(entry) === currentKey)) {
+        return currentKey;
+      }
+
+      return entryKey(selectedEntry);
+    });
+  }, [results, selectedEntry]);
+
+  function selectEntry(entry: OpeningBookEntry) {
+    setSelectedKey(entryKey(entry));
+  }
+
+  return (
+    <div className="trainer-page">
+      <div className="trainer-page-heading">
+        <span className="trainer-current-section">Opening Study</span>
+        <h1>Opening Reference</h1>
+        <p>Search the bundled CC0 Lichess opening book and connect weak personal openings to repair work.</p>
+      </div>
+      <section className="trainer-table-card opening-study-shell">
+        <div className="trainer-filter-row opening-study-filters">
+          <label className="field">
+            <span>Search</span>
+            <input
+              aria-label="Search openings"
+              autoComplete="off"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="ECO, opening name, PGN, or UCI"
+              value={query}
+            />
+          </label>
+          <label className="field">
+            <span>ECO volume</span>
+            <select
+              aria-label="ECO volume"
+              onChange={(event) => setVolume(event.target.value as OpeningBookVolume | "all")}
+              value={volume}
+            >
+              <option value="all">All volumes</option>
+              {(["A", "B", "C", "D", "E"] as OpeningBookVolume[]).map((ecoVolume) => (
+                <option key={ecoVolume} value={ecoVolume}>{ecoVolume}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Family</span>
+            <select aria-label="Opening family" onChange={(event) => setFamily(event.target.value)} value={family}>
+              <option value="all">All families</option>
+              {families.map((openingFamily) => (
+                <option key={openingFamily} value={openingFamily}>{openingFamily}</option>
+              ))}
+            </select>
+          </label>
+          <label className="chess-analysis-checkbox opening-repair-toggle">
+            <input
+              checked={personalRepairOnly}
+              onChange={(event) => setPersonalRepairOnly(event.target.checked)}
+              type="checkbox"
+            />
+            <span>Personal repair only</span>
+          </label>
+        </div>
+        <div className="opening-study-grid">
+          <section className="opening-result-list" aria-label="Opening search results">
+            <div className="opening-result-list-heading">
+              <strong>{results.length} opening(s)</strong>
+              <span>{openingBookSource.entryCount} bundled · {openingBookSource.license}</span>
+            </div>
+            {results.slice(0, 120).map((entry) => {
+              const leak = personalMatches.get(entryKey(entry));
+              return (
+                <button
+                  aria-current={entryKey(entry) === entryKey(selectedEntry) ? "true" : undefined}
+                  className={entryKey(entry) === entryKey(selectedEntry) ? "selected" : ""}
+                  key={entryKey(entry)}
+                  onClick={() => selectEntry(entry)}
+                  type="button"
+                >
+                  <span>{entry.eco}</span>
+                  <strong>{entry.name}</strong>
+                  <small>{entry.pgn}</small>
+                  {leak ? <em>{leak.recommendation}</em> : null}
+                </button>
+              );
+            })}
+            {results.length === 0 ? (
+              <section className="analysis-placeholder-panel">
+                <h3>No matching opening</h3>
+                <p className="helper-text">Try a broader ECO code, family, or line fragment.</p>
+              </section>
+            ) : null}
+          </section>
+          <section className="opening-detail-panel" aria-label="Selected opening detail">
+            {selectedEntry ? (
+              <>
+                <div className="opening-detail-heading">
+                  <div>
+                    <span>{selectedEntry.eco} · Volume {selectedEntry.volume} · {selectedEntry.ply} ply</span>
+                    <h2>{selectedEntry.name}</h2>
+                  </div>
+                  {selectedLeak ? (
+                    <span className={`recommendation-pill recommendation-${recommendationClass(selectedLeak.recommendation)}`}>
+                      {selectedLeak.recommendation}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="opening-detail-board-row">
+                  <ChessBoardPreview fen={selectedEntry.fen} label={`${selectedEntry.name} final position`} />
+                  <dl className="move-detail-grid">
+                    <div>
+                      <dt>Family</dt>
+                      <dd>{selectedEntry.family}</dd>
+                    </div>
+                    <div>
+                      <dt>Final FEN</dt>
+                      <dd>{selectedEntry.fen}</dd>
+                    </div>
+                    <div>
+                      <dt>EPD</dt>
+                      <dd>{selectedEntry.epd}</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div className="opening-line-card">
+                  <strong>PGN line</strong>
+                  <p>{selectedEntry.pgn}</p>
+                </div>
+                <div className="opening-line-card">
+                  <strong>UCI sequence</strong>
+                  <p>{selectedEntry.uci.join(" ")}</p>
+                </div>
+                {selectedLeak ? <OpeningPersonalStats leak={selectedLeak} /> : (
+                  <section className="analysis-placeholder-panel">
+                    <h3>No personal repair signal</h3>
+                    <p className="helper-text">This opening is in the reference book, but it is not currently flagged by Blake's imported games.</p>
+                  </section>
+                )}
+                <div className="trainer-button-row opening-detail-actions">
+                  <button className="secondary-button" onClick={() => onNavigate("leaks")} type="button">
+                    <Target size={17} aria-hidden="true" />
+                    Open leaks
+                  </button>
+                  <button className="secondary-button" onClick={() => onNavigate("drills")} type="button">
+                    <Dumbbell size={17} aria-hidden="true" />
+                    Open drills
+                  </button>
+                  <button className="secondary-button" onClick={() => onNavigate("games")} type="button">
+                    <FolderOpen size={17} aria-hidden="true" />
+                    Open games
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </section>
         </div>
       </section>
     </div>
@@ -5340,7 +5579,14 @@ export function ChessComAnalysisPanel() {
           {activePage === "leaks" ? (
             <LeaksPage
               onPractice={() => navigatePage("drills")}
+              onStudyOpenings={() => navigatePage("openings")}
               personalMistakes={personalMistakes}
+              report={personalReport}
+            />
+          ) : null}
+          {activePage === "openings" ? (
+            <OpeningsPage
+              onNavigate={navigatePage}
               report={personalReport}
             />
           ) : null}

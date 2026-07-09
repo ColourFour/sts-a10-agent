@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc -b",
     "build": "tsc -b && vite build",
+    "openings:generate": "node scripts/generate-chess-openings.mjs",
     "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1",
     "check:static": "node scripts/check-static-build.mjs",

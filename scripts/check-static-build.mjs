@@ -14,6 +14,7 @@ const expectedRoutes = [
   "/applets/konane",
   "/applets/chess",
   "/applets/chess/analysis",
+  "/applets/chess-com-analysis/openings",
   "/applets/super-hexagon",
   "/applets/block-stack",
   "/applets/wing-dash",
@@ -52,7 +53,7 @@ for (const ref of assetRefs) {
     fail(`asset reference ${ref} is root-absolute and will break on GitHub Pages project paths.`);
   }
 
-  if (/^https?:\/\//.test(ref)) {
+  if (/^(?:data:|https?:\/\/)/.test(ref)) {
     continue;
   }
 
